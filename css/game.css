@@ -650,18 +650,12 @@ button:hover {
 }
 
 #look-area::before {
-    content: "LOOK";
+    content: "";
     position: absolute;
     inset: 12px;
-    border: 2px dashed rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.75rem;
-    font-weight: bold;
-    letter-spacing: 0.2em;
-    text-align: center;
-    line-height: 1;
-    padding-top: 10px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
     pointer-events: none;
 }
 
@@ -755,7 +749,6 @@ button:hover {
 
     #look-area::before {
         inset: 10px;
-        font-size: 0.65rem;
     }
 }
 
@@ -768,7 +761,6 @@ button:hover {
 
     #look-area::before {
         inset: 8px;
-        font-size: 0.6rem;
     }
 
     #joystick {
