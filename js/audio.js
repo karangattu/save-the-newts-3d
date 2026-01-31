@@ -316,18 +316,63 @@ export class AudioManager {
     playCarEngine(car) {
         if (!this.isInitialized || car.isStealth) return null;
         
-        // Create engine sound nodes
+        // Create engine sound nodes with vehicle-specific characteristics
         const osc = this.audioContext.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.value = 80 + Math.random() * 40;
+        
+        // Vehicle-specific sound profiles
+        let baseFreq, oscType, modFreq, modAmount, filterFreq;
+        
+        switch (car.vehicleType) {
+            case 'motorcycle':
+                // High-pitched whine
+                oscType = 'triangle';
+                baseFreq = 150 + Math.random() * 50; // 150-200Hz
+                modFreq = 15;
+                modAmount = 20;
+                filterFreq = 800;
+                break;
+            case 'semi':
+                // Deep rumbling diesel
+                oscType = 'sawtooth';
+                baseFreq = 40 + Math.random() * 20; // 40-60Hz
+                modFreq = 4;
+                modAmount = 15;
+                filterFreq = 200;
+                break;
+            case 'truck':
+                // Lower truck rumble
+                oscType = 'sawtooth';
+                baseFreq = 60 + Math.random() * 20; // 60-80Hz
+                modFreq = 5;
+                modAmount = 12;
+                filterFreq = 250;
+                break;
+            case 'suv':
+                // Slightly deeper than car
+                oscType = 'sawtooth';
+                baseFreq = 70 + Math.random() * 30; // 70-100Hz
+                modFreq = 7;
+                modAmount = 10;
+                filterFreq = 280;
+                break;
+            default: // car, sedan
+                oscType = 'sawtooth';
+                baseFreq = 80 + Math.random() * 40; // 80-120Hz
+                modFreq = 8;
+                modAmount = 10;
+                filterFreq = 300;
+        }
+        
+        osc.type = oscType;
+        osc.frequency.value = baseFreq;
         
         // Modulator for engine rumble
         const modOsc = this.audioContext.createOscillator();
         modOsc.type = 'sine';
-        modOsc.frequency.value = 8;
+        modOsc.frequency.value = modFreq;
         
         const modGain = this.audioContext.createGain();
-        modGain.gain.value = 10;
+        modGain.gain.value = modAmount;
         
         modOsc.connect(modGain);
         modGain.connect(osc.frequency);
@@ -335,7 +380,7 @@ export class AudioManager {
         // Filter
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 300;
+        filter.frequency.value = filterFreq;
         
         // Gain with distance attenuation
         const gain = this.audioContext.createGain();
@@ -352,7 +397,8 @@ export class AudioManager {
             osc: osc,
             modOsc: modOsc,
             gain: gain,
-            baseFreq: osc.frequency.value
+            baseFreq: baseFreq,
+            vehicleType: car.vehicleType
         };
     }
     

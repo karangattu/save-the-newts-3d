@@ -35,12 +35,12 @@ class Game {
     }
     
     initSystems() {
-        // Create scene
-        this.gameScene = new GameScene();
-        
         // Create UI first to detect mobile
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
+        
+        // Create scene (pass mobile flag for optimizations)
+        this.gameScene = new GameScene(this.isMobile);
         
         // Create player with mobile flag
         this.player = new Player(
@@ -50,10 +50,11 @@ class Game {
             this.isMobile
         );
         
-        // Create flashlight
+        // Create flashlight (brighter on mobile)
         this.flashlight = new Flashlight(
             this.gameScene.camera,
-            this.gameScene.scene
+            this.gameScene.scene,
+            this.isMobile
         );
         
         // Create managers
@@ -213,8 +214,9 @@ class Game {
         // Update elapsed time
         this.elapsedTime += deltaTime;
         
-        // Update rain
+        // Update rain and splashes
         this.gameScene.updateRain(deltaTime, this.player.getPosition());
+        this.gameScene.updateSplashes(deltaTime, this.player.getPosition());
         
         // Update player
         const isMoving = this.player.update(deltaTime);
@@ -234,7 +236,8 @@ class Game {
         // Update flashlight
         this.flashlight.update(deltaTime, this.elapsedTime);
         
-        // Update newts
+        // Update newts (pass cars reference for reactive AI)
+        this.newtManager.setCars(this.carManager.getCars());
         this.newtManager.update(
             deltaTime,
             this.elapsedTime,

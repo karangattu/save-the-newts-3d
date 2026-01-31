@@ -2,12 +2,18 @@
 import * as THREE from 'three';
 
 export class GameScene {
-    constructor() {
+    constructor(isMobile = false) {
         this.scene = new THREE.Scene();
         this.camera = null;
         this.renderer = null;
         this.cameraShake = { intensity: 0, decay: 0.9 };
         this.cameraOffset = new THREE.Vector3();
+        this.isMobile = isMobile;
+        
+        // Splash particles
+        this.splashParticles = [];
+        this.splashPool = [];
+        this.maxSplashes = isMobile ? 30 : 60;
         
         this.init();
     }
@@ -60,18 +66,20 @@ export class GameScene {
         const roadWidth = 12;
         const roadLength = 200;
         
-        // Main road surface
+        // Main road surface - wet asphalt with reflections
         const roadGeometry = new THREE.PlaneGeometry(roadWidth, roadLength);
         const roadMaterial = new THREE.MeshStandardMaterial({
-            color: 0x222222,
-            roughness: 0.9,
-            metalness: 0.1
+            color: 0x1a1a1a,
+            roughness: 0.3, // Lower roughness for wet reflective look
+            metalness: 0.4, // Higher metalness for reflections
+            envMapIntensity: 0.8
         });
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.rotation.x = -Math.PI / 2;
         road.position.y = 0;
         road.receiveShadow = true;
         this.scene.add(road);
+        this.roadMesh = road; // Store reference for effects
         
         // Road edge lines (white)
         const lineGeometry = new THREE.PlaneGeometry(0.3, roadLength);
@@ -422,6 +430,75 @@ export class GameScene {
                 (Math.random() - 0.5) * 150
             );
             this.scene.add(puddle);
+        }
+        
+        // Store puddle positions for splash effects
+        this.puddlePositions = [];
+        // Will be populated during gameplay for splash detection
+    }
+    
+    // Create rain splash particle system
+    createSplashParticle(x, z) {
+        // Check if we have room for more splashes
+        if (this.splashParticles.length >= this.maxSplashes) {
+            // Reuse oldest splash
+            const oldSplash = this.splashParticles.shift();
+            oldSplash.position.set(x, 0.05, z);
+            oldSplash.scale.set(0.1, 0.1, 0.1);
+            oldSplash.material.opacity = 0.8;
+            oldSplash.userData.life = 0;
+            this.splashParticles.push(oldSplash);
+            return;
+        }
+        
+        // Create new splash ring
+        const geometry = new THREE.RingGeometry(0.02, 0.08, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x6688aa,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+        });
+        
+        const splash = new THREE.Mesh(geometry, material);
+        splash.rotation.x = -Math.PI / 2;
+        splash.position.set(x, 0.05, z);
+        splash.userData.life = 0;
+        splash.userData.maxLife = 0.4;
+        
+        this.scene.add(splash);
+        this.splashParticles.push(splash);
+    }
+    
+    updateSplashes(deltaTime, cameraPosition) {
+        // Spawn new splashes near player (simulating rain hitting ground)
+        const splashChance = this.isMobile ? 0.15 : 0.3;
+        if (Math.random() < splashChance) {
+            const x = cameraPosition.x + (Math.random() - 0.5) * 20;
+            const z = cameraPosition.z + (Math.random() - 0.5) * 20;
+            // Only splash on/near road
+            if (Math.abs(x) < 8) {
+                this.createSplashParticle(x, z);
+            }
+        }
+        
+        // Update existing splashes
+        for (let i = this.splashParticles.length - 1; i >= 0; i--) {
+            const splash = this.splashParticles[i];
+            splash.userData.life += deltaTime;
+            
+            const progress = splash.userData.life / splash.userData.maxLife;
+            
+            // Expand and fade
+            const scale = 0.1 + progress * 0.4;
+            splash.scale.set(scale, scale, scale);
+            splash.material.opacity = 0.8 * (1 - progress);
+            
+            // Remove when done
+            if (splash.userData.life >= splash.userData.maxLife) {
+                this.scene.remove(splash);
+                this.splashParticles.splice(i, 1);
+            }
         }
     }
     

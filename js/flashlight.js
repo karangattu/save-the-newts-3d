@@ -2,17 +2,18 @@
 import * as THREE from 'three';
 
 export class Flashlight {
-    constructor(camera, scene) {
+    constructor(camera, scene, isMobile = false) {
         this.camera = camera;
         this.scene = scene;
+        this.isMobile = isMobile;
         
         // Battery properties
         this.battery = 100;
         this.baseDrainRate = 2; // % per second base rate
         this.drainMultiplier = 1;
         
-        // Flashlight properties
-        this.maxIntensity = 8;
+        // Flashlight properties - brighter on mobile for visibility
+        this.maxIntensity = isMobile ? 14 : 8;
         this.flickerThreshold = 20;
         this.isFlickering = false;
         this.flickerTimer = 0;
@@ -21,12 +22,12 @@ export class Flashlight {
     }
     
     init() {
-        // Main spotlight (flashlight beam)
+        // Main spotlight (flashlight beam) - wider angle on mobile
         this.spotlight = new THREE.SpotLight(0xffffee, this.maxIntensity);
-        this.spotlight.angle = 0.5;
-        this.spotlight.penumbra = 0.4;
-        this.spotlight.decay = 1.5;
-        this.spotlight.distance = 60;
+        this.spotlight.angle = this.isMobile ? 0.6 : 0.5;
+        this.spotlight.penumbra = this.isMobile ? 0.5 : 0.4;
+        this.spotlight.decay = this.isMobile ? 1.2 : 1.5;
+        this.spotlight.distance = this.isMobile ? 70 : 60;
         this.spotlight.castShadow = true;
         
         // Shadow quality
