@@ -38,6 +38,12 @@ export class UIManager {
         
         // Mobile detection
         this.isMobile = this.detectMobile();
+        
+        // Haptic support detection
+        this.hasHaptics = 'vibrate' in navigator;
+        
+        // First time player check for onboarding
+        this.isFirstPlay = !localStorage.getItem('newtRescuePlayed');
 
         if (this.isMobile && this.rescuePrompt) {
             this.rescuePrompt.textContent = 'Tap to Rescue!';
@@ -357,6 +363,102 @@ export class UIManager {
     
     getIsMobile() {
         return this.isMobile;
+    }
+    
+    // Haptic feedback methods
+    hapticLight() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate(10);
+        }
+    }
+    
+    hapticMedium() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate(25);
+        }
+    }
+    
+    hapticHeavy() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate(50);
+        }
+    }
+    
+    hapticSuccess() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate([20, 50, 30]); // Short-pause-longer pattern
+        }
+    }
+    
+    hapticWarning() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate([50, 30, 50]); // Two quick pulses
+        }
+    }
+    
+    hapticError() {
+        if (this.hasHaptics && this.isMobile) {
+            navigator.vibrate([100, 50, 100, 50, 100]); // Three strong pulses
+        }
+    }
+    
+    // Mobile onboarding
+    showMobileOnboarding() {
+        if (!this.isMobile || !this.isFirstPlay) return;
+        
+        const overlay = document.createElement('div');
+        overlay.id = 'mobile-onboarding';
+        overlay.innerHTML = `
+            <div class="onboarding-content">
+                <h2>Quick Guide</h2>
+                <div class="onboarding-tips">
+                    <div class="tip">
+                        <div class="tip-icon"><i class="fas fa-hand-pointer"></i></div>
+                        <div class="tip-text">
+                            <strong>Move</strong>
+                            <span>Drag the joystick</span>
+                        </div>
+                    </div>
+                    <div class="tip">
+                        <div class="tip-icon"><i class="fas fa-hand-sparkles"></i></div>
+                        <div class="tip-text">
+                            <strong>Look Around</strong>
+                            <span>Swipe right side of screen</span>
+                        </div>
+                    </div>
+                    <div class="tip">
+                        <div class="tip-icon"><i class="fas fa-frog"></i></div>
+                        <div class="tip-text">
+                            <strong>Rescue Newts</strong>
+                            <span>Tap rescue when close</span>
+                        </div>
+                    </div>
+                </div>
+                <button id="onboarding-dismiss">Got it!</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
+        const dismissBtn = document.getElementById('onboarding-dismiss');
+        dismissBtn.addEventListener('click', () => {
+            this.hapticLight();
+            overlay.classList.add('fade-out');
+            setTimeout(() => {
+                overlay.remove();
+            }, 300);
+        });
+        
+        // Also dismiss on tap outside
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                dismissBtn.click();
+            }
+        });
+    }
+    
+    markAsPlayed() {
+        localStorage.setItem('newtRescuePlayed', 'true');
+        this.isFirstPlay = false;
     }
     
     onStartClick(callback) {

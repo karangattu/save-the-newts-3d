@@ -187,6 +187,15 @@ class Game {
         this.ui.updateTime(0);
         this.ui.hideRescuePrompt();
         
+        // Show mobile onboarding on first play
+        if (this.isMobile && this.ui.isFirstPlay) {
+            this.ui.showMobileOnboarding();
+            this.ui.markAsPlayed();
+        }
+        
+        // Haptic feedback for game start
+        this.ui.hapticMedium();
+        
         // Start ambient sounds
         this.audioManager.startAmbient();
         
@@ -205,6 +214,7 @@ class Game {
             if (rescued) {
                 this.audioManager.playRescueSound();
                 this.ui.updateScore(this.newtManager.getRescuedCount());
+                this.ui.hapticSuccess(); // Haptic feedback for rescue
                 
                 // Recharge battery on rescue
                 this.flashlight.recharge(8); // +8% battery per newt
@@ -216,6 +226,9 @@ class Game {
     
     gameOver(reason) {
         this.state = 'gameover';
+        
+        // Haptic feedback for game over
+        this.ui.hapticError();
         
         // Stop audio
         this.audioManager.stopAmbient();
@@ -333,6 +346,7 @@ class Game {
         if (nearMissResult) {
             this.audioManager.playNearMissSound();
             this.ui.triggerNearMissEffect();
+            this.ui.hapticWarning(); // Haptic feedback for near-miss
             this.gameScene.triggerCameraShake(0.15);
         }
         
