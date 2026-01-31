@@ -359,9 +359,20 @@ export class AudioManager {
     updateCarEngine(engineSound, distance, carSpeed) {
         if (!engineSound) return;
         
-        // Distance attenuation
-        const maxDistance = 50;
-        const volume = Math.max(0, 1 - distance / maxDistance) * 0.15;
+        // Distance attenuation - louder as cars get closer
+        const maxDistance = 60;
+        const minDistance = 3; // Distance at which volume is maximum
+        
+        // Use inverse square falloff for more realistic sound attenuation
+        // Cars get much louder as they approach
+        let volume;
+        if (distance <= minDistance) {
+            volume = 0.6; // Maximum volume when very close
+        } else {
+            // Quadratic falloff for more dramatic distance effect
+            const normalizedDist = (distance - minDistance) / (maxDistance - minDistance);
+            volume = Math.max(0, 1 - normalizedDist * normalizedDist) * 0.6;
+        }
         engineSound.gain.gain.value = volume;
         
         // Doppler-like pitch shift based on speed
