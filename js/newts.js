@@ -18,14 +18,6 @@ export class NewtManager {
         // Rescue settings
         this.rescueDistance = 3;
         this.nearbyNewt = null;
-        
-        // Reference to cars for reactive AI
-        this.cars = [];
-    }
-    
-    // Set cars reference for reactive AI
-    setCars(cars) {
-        this.cars = cars;
     }
     
     createNewtMesh() {
@@ -231,62 +223,18 @@ export class NewtManager {
             mesh: mesh,
             startX: startX,
             targetX: targetX,
-            speed: 0.5 + Math.random() * 0.5,
+            speed: 0.3 + Math.random() * 0.4, // Slower, more realistic speed (0.3-0.7)
             isIlluminated: false,
             illuminationTime: 0,
             walkCycle: Math.random() * Math.PI * 2, // Random start phase for variety
-            // Reactive AI states
-            state: 'crossing', // 'crossing', 'frozen', 'fleeing'
-            frozenTimer: 0,
-            fleeDirection: 0,
-            originalSpeed: 0 // Store original speed
+            // Natural behavior
+            pauseTimer: 0,
+            isPaused: false,
+            pauseDuration: 0,
+            nextPauseIn: 2 + Math.random() * 4 // Random time until first pause (2-6 sec)
         };
-        newt.originalSpeed = newt.speed;
         
         this.newts.push(newt);
-    }
-    
-    // Check if newt is in car headlights
-    isInHeadlights(newt) {
-        for (const car of this.cars) {
-            if (car.isStealth) continue; // Stealth cars have no headlights
-            
-            const carPos = car.mesh.position;
-            const newtPos = newt.mesh.position;
-            
-            // Check if newt is in front of the car (within headlight range)
-            const dx = newtPos.x - carPos.x;
-            const dz = newtPos.z - carPos.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            
-            // Headlight cone check - car direction matters
-            const inFront = car.direction > 0 ? (dz > carPos.z) : (dz < carPos.z);
-            const lateralDist = Math.abs(dx);
-            
-            // Within 15 units ahead, 3 units lateral spread
-            if (inFront && distance < 15 && lateralDist < 3) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    // Check for nearby passing cars (for flee response)
-    getNearbyCarThreat(newt) {
-        for (const car of this.cars) {
-            const carPos = car.mesh.position;
-            const newtPos = newt.mesh.position;
-            
-            const dx = newtPos.x - carPos.x;
-            const dz = newtPos.z - carPos.z;
-            const distance = Math.sqrt(dx * dx + dz * dz);
-            
-            // Car passing very close (within 4 units)
-            if (distance < 4) {
-                return { car, dx, dz, distance };
-            }
-        }
-        return null;
     }
     
     update(deltaTime, elapsedTime, playerPosition) {
@@ -308,55 +256,35 @@ export class NewtManager {
         for (let i = this.newts.length - 1; i >= 0; i--) {
             const newt = this.newts[i];
             
-            // Reactive AI state machine
-            const inHeadlights = this.isInHeadlights(newt);
-            const nearbyThreat = this.getNearbyCarThreat(newt);
-            
-            // State transitions
-            if (newt.state === 'crossing') {
-                if (inHeadlights) {
-                    // Freeze in headlights!
-                    newt.state = 'frozen';
-                    newt.frozenTimer = 0;
-                    newt.speed = 0;
-                } else if (nearbyThreat) {
-                    // Flee from nearby car
-                    newt.state = 'fleeing';
-                    newt.frozenTimer = 0;
-                    // Flee perpendicular to car direction
-                    newt.fleeDirection = nearbyThreat.dx > 0 ? 1 : -1;
-                    newt.speed = newt.originalSpeed * 2.5; // Run faster when scared
+            // Natural pause behavior - newts occasionally stop while crossing
+            if (newt.isPaused) {
+                newt.pauseTimer += deltaTime;
+                if (newt.pauseTimer >= newt.pauseDuration) {
+                    // Resume movement
+                    newt.isPaused = false;
+                    newt.pauseTimer = 0;
+                    newt.nextPauseIn = 3 + Math.random() * 5; // Next pause in 3-8 seconds
                 }
-            } else if (newt.state === 'frozen') {
-                newt.frozenTimer += deltaTime;
-                // Unfreeze after 1.5 seconds or when headlights pass
-                if (!inHeadlights || newt.frozenTimer > 1.5) {
-                    newt.state = 'crossing';
-                    newt.speed = newt.originalSpeed;
-                }
-            } else if (newt.state === 'fleeing') {
-                newt.frozenTimer += deltaTime;
-                // Resume normal crossing after 1 second
-                if (newt.frozenTimer > 1.0) {
-                    newt.state = 'crossing';
-                    newt.speed = newt.originalSpeed;
+            } else {
+                newt.nextPauseIn -= deltaTime;
+                if (newt.nextPauseIn <= 0 && Math.random() < 0.3) {
+                    // Random chance to pause (30% when timer expires)
+                    newt.isPaused = true;
+                    newt.pauseTimer = 0;
+                    newt.pauseDuration = 0.5 + Math.random() * 1.5; // Pause for 0.5-2 seconds
+                } else if (newt.nextPauseIn <= 0) {
+                    // Reset timer if didn't pause
+                    newt.nextPauseIn = 2 + Math.random() * 3;
                 }
             }
             
-            // Movement based on state
+            // Movement - newts cross regardless of cars (realistic behavior)
             const direction = newt.targetX > newt.startX ? 1 : -1;
             
-            if (newt.state === 'crossing') {
+            if (!newt.isPaused) {
                 // Normal movement towards target
                 newt.mesh.position.x += direction * newt.speed * deltaTime;
-            } else if (newt.state === 'fleeing') {
-                // Move away from threat (laterally)
-                newt.mesh.position.x += newt.fleeDirection * newt.speed * deltaTime;
-            }
-            // Frozen state: no movement
-            
-            // Animate walking cycle (only if moving)
-            if (newt.speed > 0) {
+                // Animate walking cycle when moving
                 newt.walkCycle += deltaTime * newt.speed * 12;
             }
             
@@ -364,7 +292,7 @@ export class NewtManager {
             const legs = newt.mesh.userData.legs;
             if (legs) {
                 // Diagonal gait - front right + back left move together, then front left + back right
-                const legSwing = 0.4; // Amount of rotation
+                const legSwing = newt.isPaused ? 0 : 0.4; // No leg movement when paused
                 const phase = newt.walkCycle;
                 
                 // Front right and back left (in sync)

@@ -296,8 +296,7 @@ class Game {
         // Update flashlight
         this.flashlight.update(deltaTime, this.elapsedTime);
         
-        // Update newts (pass cars reference for reactive AI)
-        this.newtManager.setCars(this.carManager.getCars());
+        // Update newts
         this.newtManager.update(
             deltaTime,
             this.elapsedTime,
