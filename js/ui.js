@@ -38,6 +38,10 @@ export class UIManager {
         
         // Mobile detection
         this.isMobile = this.detectMobile();
+
+        if (this.isMobile && this.rescuePrompt) {
+            this.rescuePrompt.textContent = 'Tap to Rescue!';
+        }
         
         // Store last game data for submission
         this.lastGameData = null;

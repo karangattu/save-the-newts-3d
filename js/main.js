@@ -14,6 +14,7 @@ class Game {
         // Game state
         this.state = 'menu'; // 'menu', 'playing', 'gameover'
         this.isMobile = false;
+        this.isVisibilityPaused = false;
         
         // Timing
         this.clock = null;
@@ -109,7 +110,53 @@ class Game {
                     this.attemptRescue();
                 }
             });
+            rescueButton.addEventListener('click', () => {
+                if (this.state === 'playing') {
+                    this.attemptRescue();
+                }
+            });
         }
+
+        // Tap-to-rescue on look area (mobile)
+        if (this.isMobile) {
+            const lookArea = document.getElementById('look-area');
+            if (lookArea) {
+                let tapStart = null;
+                lookArea.addEventListener('touchstart', (e) => {
+                    if (e.touches.length !== 1) return;
+                    const touch = e.touches[0];
+                    tapStart = {
+                        x: touch.clientX,
+                        y: touch.clientY,
+                        time: performance.now()
+                    };
+                }, { passive: true });
+                lookArea.addEventListener('touchend', (e) => {
+                    if (!tapStart || !e.changedTouches || e.changedTouches.length === 0) return;
+                    const touch = e.changedTouches[0];
+                    const dx = touch.clientX - tapStart.x;
+                    const dy = touch.clientY - tapStart.y;
+                    const dt = performance.now() - tapStart.time;
+                    tapStart = null;
+                    if (dt < 250 && Math.hypot(dx, dy) < 12 && this.state === 'playing') {
+                        if (this.newtManager.canRescue()) {
+                            this.attemptRescue();
+                        }
+                    }
+                }, { passive: true });
+            }
+        }
+
+        // Pause heavy updates when tab is hidden (mobile battery + CPU)
+        document.addEventListener('visibilitychange', () => {
+            this.isVisibilityPaused = document.hidden;
+            if (this.isVisibilityPaused) {
+                this.audioManager.stopAmbient();
+                this.audioManager.stopLowBatteryWarning();
+            } else if (this.state === 'playing') {
+                this.audioManager.startAmbient();
+            }
+        });
     }
     
     startGame() {
@@ -518,6 +565,10 @@ class Game {
         const deltaTime = Math.min(currentTime - this.lastTime, 0.1); // Cap at 100ms
         this.lastTime = currentTime;
         
+        if (this.isVisibilityPaused) {
+            return;
+        }
+
         // Update game logic
         this.update(deltaTime);
         

@@ -14,6 +14,8 @@ export class GameScene {
         this.splashParticles = [];
         this.splashPool = [];
         this.maxSplashes = isMobile ? 30 : 60;
+        this.rainUpdateAccumulator = 0;
+        this.splashUpdateAccumulator = 0;
         
         this.init();
     }
@@ -29,17 +31,18 @@ export class GameScene {
         this.camera.position.set(0, 1.7, 0);
         
         // Create renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.shadowMap.enabled = true;
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.renderer.shadowMap.enabled = !this.isMobile;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
         // Dark rainy night sky
         this.scene.background = new THREE.Color(0x030308);
         
         // Add fog for atmosphere and limiting visibility (denser for rain)
-        this.scene.fog = new THREE.FogExp2(0x030308, 0.05);
+        this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.06 : 0.05);
         
         // Create environment
         this.createRoad();
@@ -182,7 +185,8 @@ export class GameScene {
         this.scene.add(cliffFace);
         
         // Add some rock formations on cliff edge
-        for (let i = 0; i < 30; i++) {
+        const rockCount = this.isMobile ? 12 : 30;
+        for (let i = 0; i < rockCount; i++) {
             const rockGeometry = new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.5, 0);
             const rockMaterial = new THREE.MeshStandardMaterial({
                 color: 0x555555,
@@ -249,7 +253,8 @@ export class GameScene {
         const treePositions = [];
         
         // Generate dense forest on LEFT side only (forest side)
-        for (let i = 0; i < 150; i++) {
+        const treeCount = this.isMobile ? 70 : 150;
+        for (let i = 0; i < treeCount; i++) {
             const x = -(12 + Math.random() * 40); // Only negative X (left side)
             const z = (Math.random() - 0.5) * 180;
             treePositions.push({ x, z });
@@ -282,7 +287,8 @@ export class GameScene {
         });
         
         // Add some bushes/undergrowth in forest for atmosphere
-        for (let i = 0; i < 50; i++) {
+        const bushCount = this.isMobile ? 20 : 50;
+        for (let i = 0; i < bushCount; i++) {
             const bushGeometry = new THREE.SphereGeometry(0.5 + Math.random() * 0.5, 6, 6);
             const bushMaterial = new THREE.MeshStandardMaterial({
                 color: 0x0d1a0d,
@@ -301,7 +307,7 @@ export class GameScene {
     
     createStars() {
         const starGeometry = new THREE.BufferGeometry();
-        const starCount = 500;
+        const starCount = this.isMobile ? 200 : 500;
         const positions = new Float32Array(starCount * 3);
         
         for (let i = 0; i < starCount; i++) {
@@ -329,7 +335,7 @@ export class GameScene {
     
     createRain() {
         // Rain particle system
-        const rainCount = 15000;
+        const rainCount = this.isMobile ? 6000 : 15000;
         const rainGeometry = new THREE.BufferGeometry();
         
         const positions = new Float32Array(rainCount * 3);
@@ -365,6 +371,14 @@ export class GameScene {
     
     updateRain(deltaTime, cameraPosition) {
         if (!this.rain) return;
+        if (this.isMobile) {
+            this.rainUpdateAccumulator += deltaTime;
+            if (this.rainUpdateAccumulator < 1 / 30) {
+                return;
+            }
+            deltaTime = this.rainUpdateAccumulator;
+            this.rainUpdateAccumulator = 0;
+        }
         
         const positions = this.rainGeometry.attributes.position.array;
         const rainCount = positions.length / 3;
@@ -389,7 +403,8 @@ export class GameScene {
     
     createPuddles() {
         // Random puddles on the road for realism
-        for (let i = 0; i < 20; i++) {
+        const puddleCount = this.isMobile ? 10 : 20;
+        for (let i = 0; i < puddleCount; i++) {
             const puddleGeometry = new THREE.CircleGeometry(0.5 + Math.random() * 1, 16);
             const puddleMaterial = new THREE.MeshStandardMaterial({
                 color: 0x1a1a2e,
@@ -411,7 +426,8 @@ export class GameScene {
         }
         
         // Some larger puddles near the road edges
-        for (let i = 0; i < 8; i++) {
+        const edgePuddleCount = this.isMobile ? 4 : 8;
+        for (let i = 0; i < edgePuddleCount; i++) {
             const puddleGeometry = new THREE.CircleGeometry(1.5 + Math.random() * 1.5, 16);
             const puddleMaterial = new THREE.MeshStandardMaterial({
                 color: 0x151525,
@@ -471,6 +487,14 @@ export class GameScene {
     }
     
     updateSplashes(deltaTime, cameraPosition) {
+        if (this.isMobile) {
+            this.splashUpdateAccumulator += deltaTime;
+            if (this.splashUpdateAccumulator < 1 / 30) {
+                return;
+            }
+            deltaTime = this.splashUpdateAccumulator;
+            this.splashUpdateAccumulator = 0;
+        }
         // Spawn new splashes near player (simulating rain hitting ground)
         const splashChance = this.isMobile ? 0.15 : 0.3;
         if (Math.random() < splashChance) {
@@ -533,6 +557,8 @@ export class GameScene {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     }
     
     render() {

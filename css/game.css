@@ -585,8 +585,8 @@ button:hover {
 }
 
 #joystick {
-    width: 120px;
-    height: 120px;
+    width: 140px;
+    height: 140px;
     background: rgba(255, 255, 255, 0.15);
     border: 3px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
@@ -597,8 +597,8 @@ button:hover {
 }
 
 #joystick-knob {
-    width: 50px;
-    height: 50px;
+    width: 60px;
+    height: 60px;
     background: rgba(255, 255, 255, 0.5);
     border-radius: 50%;
     transition: transform 0.05s;
@@ -612,11 +612,12 @@ button:hover {
     flex-direction: column;
     gap: 15px;
     pointer-events: auto;
+    z-index: 2;
 }
 
 #rescue-button {
-    width: 90px;
-    height: 90px;
+    width: 110px;
+    height: 110px;
     border-radius: 50%;
     background: rgba(0, 200, 100, 0.7);
     border: 3px solid rgba(0, 255, 100, 0.8);
@@ -640,10 +641,28 @@ button:hover {
     position: absolute;
     top: 0;
     right: 0;
-    width: 60%;
-    height: 70%;
+    width: 65%;
+    bottom: 140px;
+    height: auto;
     pointer-events: auto;
     touch-action: none;
+    z-index: 1;
+}
+
+#look-area::before {
+    content: "LOOK";
+    position: absolute;
+    inset: 12px;
+    border: 2px dashed rgba(255, 255, 255, 0.25);
+    border-radius: 16px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 0.2em;
+    text-align: center;
+    line-height: 1;
+    padding-top: 10px;
+    pointer-events: none;
 }
 
 /* Crosshair */
@@ -727,23 +746,45 @@ button:hover {
         font-size: 1rem;
         padding: 10px 20px;
     }
+
+    #look-area {
+        width: 55%;
+        top: 20px;
+        bottom: 180px;
+    }
+
+    #look-area::before {
+        inset: 10px;
+        font-size: 0.65rem;
+    }
 }
 
 @media (max-width: 480px) {
+    #look-area {
+        width: 50%;
+        top: 10px;
+        bottom: 170px;
+    }
+
+    #look-area::before {
+        inset: 8px;
+        font-size: 0.6rem;
+    }
+
     #joystick {
-        width: 100px;
-        height: 100px;
+        width: 120px;
+        height: 120px;
     }
     
     #joystick-knob {
-        width: 40px;
-        height: 40px;
+        width: 50px;
+        height: 50px;
     }
     
     #rescue-button {
-        width: 75px;
-        height: 75px;
-        font-size: 0.8rem;
+        width: 95px;
+        height: 95px;
+        font-size: 0.85rem;
     }
     
     #joystick-container {
