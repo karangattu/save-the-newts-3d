@@ -923,3 +923,63 @@ button:hover {
         font-size: 1.2rem;
     }
 }
+
+/* Rescue Feedback */
+#rescue-feedback {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    background: linear-gradient(135deg, rgba(0, 200, 100, 0.95), rgba(0, 150, 80, 0.95));
+    color: #fff;
+    padding: 20px 40px;
+    border-radius: 20px;
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 40px rgba(0, 255, 100, 0.6),
+                0 0 80px rgba(0, 255, 100, 0.3),
+                inset 0 0 20px rgba(255, 255, 255, 0.2);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+#rescue-feedback i {
+    margin-right: 10px;
+    color: #fff;
+}
+
+#rescue-feedback.show {
+    animation: rescue-pop 1.2s ease-out forwards;
+}
+
+@keyframes rescue-pop {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.5);
+    }
+    15% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.1);
+    }
+    25% {
+        transform: translate(-50%, -50%) scale(1);
+    }
+    75% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -60%) scale(0.9);
+    }
+}
+
+@media (max-width: 768px) {
+    #rescue-feedback {
+        font-size: 1.2rem;
+        padding: 15px 30px;
+    }
+}
