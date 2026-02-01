@@ -12,7 +12,9 @@ body {
 }
 
 /* Font Awesome icon styling */
-.fas, .far, .fab {
+.fas,
+.far,
+.fab {
     margin-right: 6px;
 }
 
@@ -65,6 +67,12 @@ body {
     justify-content: center;
     align-items: center;
     z-index: 100;
+}
+
+#start-screen {
+    background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.8)), url('../assets/poster.png');
+    background-size: cover;
+    background-position: center;
 }
 
 .overlay.hidden {
@@ -310,9 +318,17 @@ button:hover {
     color: #ffd700;
 }
 
-.leaderboard-rank.gold { color: #ffd700; }
-.leaderboard-rank.silver { color: #c0c0c0; }
-.leaderboard-rank.bronze { color: #cd7f32; }
+.leaderboard-rank.gold {
+    color: #ffd700;
+}
+
+.leaderboard-rank.silver {
+    color: #c0c0c0;
+}
+
+.leaderboard-rank.bronze {
+    color: #cd7f32;
+}
 
 .leaderboard-info {
     flex: 1;
@@ -345,7 +361,9 @@ button:hover {
     font-style: italic;
 }
 
-#close-leaderboard-btn, #leaderboard-btn, #view-leaderboard-btn {
+#close-leaderboard-btn,
+#leaderboard-btn,
+#view-leaderboard-btn {
     background: linear-gradient(135deg, #667eea, #764ba2);
 }
 
@@ -404,8 +422,15 @@ button:hover {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
 }
 
 #battery-percent {
@@ -414,11 +439,13 @@ button:hover {
     margin-left: 10px;
 }
 
-#score-container, #time-container {
+#score-container,
+#time-container {
     text-align: center;
 }
 
-#score, #time {
+#score,
+#time {
     font-size: 1.8rem;
     font-weight: bold;
     color: #fff;
@@ -443,8 +470,15 @@ button:hover {
 }
 
 @keyframes bounce {
-    0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(-5px); }
+
+    0%,
+    100% {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    50% {
+        transform: translateX(-50%) translateY(-5px);
+    }
 }
 
 /* Near-miss vignette effect */
@@ -467,8 +501,13 @@ button:hover {
 }
 
 @keyframes vignette-flash {
-    0% { opacity: 1; }
-    100% { opacity: 0; }
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
 }
 
 /* Battery boost effect */
@@ -496,9 +535,19 @@ button:hover {
 }
 
 @keyframes boost-fade {
-    0% { opacity: 1; transform: translateY(0); }
-    70% { opacity: 1; }
-    100% { opacity: 0; transform: translateY(-20px); }
+    0% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    70% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
 }
 
 /* Falling overlay */
@@ -553,13 +602,27 @@ button:hover {
 }
 
 @keyframes predator-shake {
-    0%, 100% { transform: translateX(-5px) rotate(-2deg); }
-    50% { transform: translateX(5px) rotate(2deg); }
+
+    0%,
+    100% {
+        transform: translateX(-5px) rotate(-2deg);
+    }
+
+    50% {
+        transform: translateX(5px) rotate(2deg);
+    }
 }
 
 @keyframes predator-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
 }
 
 /* Mobile Controls */
@@ -597,7 +660,7 @@ button:hover {
     align-items: center;
     touch-action: none;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
-                inset 0 0 20px rgba(255, 255, 255, 0.05);
+        inset 0 0 20px rgba(255, 255, 255, 0.05);
 }
 
 #joystick-knob {
@@ -640,7 +703,7 @@ button:hover {
     padding: 10px;
     touch-action: manipulation;
     box-shadow: 0 4px 20px rgba(0, 200, 100, 0.3),
-                inset 0 0 15px rgba(255, 255, 255, 0.1);
+        inset 0 0 15px rgba(255, 255, 255, 0.1);
     transition: transform 0.1s, box-shadow 0.1s;
 }
 
@@ -654,7 +717,7 @@ button:hover {
     transform: scale(0.92);
     background: linear-gradient(135deg, rgba(0, 255, 120, 0.7), rgba(0, 200, 100, 0.7));
     box-shadow: 0 2px 10px rgba(0, 255, 100, 0.5),
-                inset 0 0 20px rgba(255, 255, 255, 0.2);
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
 }
 
 #look-area {
@@ -701,13 +764,23 @@ button:hover {
 }
 
 @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes fade-out {
-    from { opacity: 1; }
-    to { opacity: 0; }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
 }
 
 .onboarding-content {
@@ -793,33 +866,33 @@ button:hover {
         padding: 20px;
         max-width: 90%;
     }
-    
+
     .overlay h1 {
         font-size: 2rem;
     }
-    
+
     .instructions {
         padding: 15px;
         font-size: 0.9rem;
     }
-    
+
     .instructions ul {
         padding-left: 5px;
     }
-    
+
     button {
         padding: 12px 30px;
         font-size: 1rem;
     }
-    
+
     .stats {
         gap: 15px;
     }
-    
+
     .stat-value {
         font-size: 1.8rem;
     }
-    
+
     #hud {
         top: 10px;
         left: 10px;
@@ -827,28 +900,30 @@ button:hover {
         gap: 10px;
         flex-wrap: wrap;
     }
-    
+
     #battery-container {
         flex: 1 1 100%;
         max-width: none;
     }
-    
-    #score-container, #time-container {
+
+    #score-container,
+    #time-container {
         flex: 1;
     }
-    
+
     .hud-label {
         font-size: 0.65rem;
     }
-    
-    #score, #time {
+
+    #score,
+    #time {
         font-size: 1.4rem;
     }
-    
+
     #battery-bar {
         height: 16px;
     }
-    
+
     #rescue-prompt {
         bottom: 150px;
         font-size: 1rem;
@@ -881,42 +956,42 @@ button:hover {
         width: 120px;
         height: 120px;
     }
-    
+
     #joystick-knob {
         width: 48px;
         height: 48px;
     }
-    
+
     #rescue-button {
         width: 85px;
         height: 85px;
         font-size: 0.7rem;
     }
-    
+
     #rescue-button i {
         font-size: 1.3rem;
     }
-    
+
     #joystick-container {
         bottom: 20px;
         left: 20px;
     }
-    
+
     #mobile-buttons {
         bottom: 20px;
         right: 20px;
     }
-    
+
     .onboarding-content {
         padding: 20px;
         max-width: 280px;
     }
-    
+
     .tip {
         padding: 12px;
         gap: 12px;
     }
-    
+
     .tip-icon {
         width: 42px;
         height: 42px;
@@ -938,8 +1013,8 @@ button:hover {
     font-weight: bold;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     box-shadow: 0 0 40px rgba(0, 255, 100, 0.6),
-                0 0 80px rgba(0, 255, 100, 0.3),
-                inset 0 0 20px rgba(255, 255, 255, 0.2);
+        0 0 80px rgba(0, 255, 100, 0.3),
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
     opacity: 0;
     pointer-events: none;
     z-index: 100;
@@ -960,17 +1035,21 @@ button:hover {
         opacity: 0;
         transform: translate(-50%, -50%) scale(0.5);
     }
+
     15% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1.1);
     }
+
     25% {
         transform: translate(-50%, -50%) scale(1);
     }
+
     75% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);
     }
+
     100% {
         opacity: 0;
         transform: translate(-50%, -60%) scale(0.9);
