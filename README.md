@@ -4,20 +4,18 @@ A first-person 3D game where you rescue California newts crossing a rainy road a
 
 ## Play
 
-Use your flashlight to spot newts and press **E** to rescue them. Avoid cars, predators, and the cliff edge.
+Walk into newts to rescue them. Avoid cars, predators, and the cliff edge.
 
 **Controls**
-- `WASD` — Move
-- `Mouse` — Look around
-- `E` — Rescue newt
+- `WASD` / Joystick — Move
+- `Mouse` / Touch — Look around
+- Walk into newt — Auto-rescue
 
 ## Run Locally
 
 ```bash
 npx serve .
 ```
-
-Open `http://localhost:3000`
 
 ## Tech
 
