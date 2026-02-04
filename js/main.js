@@ -85,6 +85,8 @@ class Game {
         this.ui.onCloseLeaderboard(() => this.ui.hideLeaderboard());
         this.ui.onSubmitScore(() => this.submitScore());
 
+        this.ui.onFlashlightToggle(() => this.toggleFlashlight());
+
         // Pointer lock change (desktop only)
         if (!this.isMobile) {
             document.addEventListener('pointerlockchange', () => {
@@ -132,6 +134,7 @@ class Game {
         this.ui.updateBattery(100);
         this.ui.updateScore(0);
         this.ui.updateTime(0);
+        this.ui.setFlashlightToggle(true);
 
 
         // Show mobile onboarding on first play
@@ -153,6 +156,14 @@ class Game {
 
         // Set state
         this.state = 'playing';
+    }
+
+    toggleFlashlight() {
+        const isEnabled = this.flashlight.toggleEnabled();
+        this.ui.setFlashlightToggle(isEnabled);
+        if (!isEnabled) {
+            this.audioManager.stopLowBatteryWarning();
+        }
     }
 
 
@@ -287,13 +298,13 @@ class Game {
         }
 
         // Check battery
-        if (this.flashlight.isDead()) {
+        if (this.flashlight.getIsEnabled() && this.flashlight.isDead()) {
             this.gameOver('battery');
             return;
         }
 
         // Low battery warning
-        if (this.flashlight.isLowBattery()) {
+        if (this.flashlight.getIsEnabled() && this.flashlight.isLowBattery()) {
             this.audioManager.startLowBatteryWarning();
         } else {
             this.audioManager.stopLowBatteryWarning();

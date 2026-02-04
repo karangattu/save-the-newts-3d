@@ -11,6 +11,7 @@ export class Flashlight {
         this.battery = 100;
         this.baseDrainRate = 2; // % per second base rate
         this.drainMultiplier = 1;
+        this.isEnabled = true;
         
         // Flashlight properties - brighter on mobile for visibility
         this.maxIntensity = isMobile ? 14 : 8;
@@ -59,14 +60,19 @@ export class Flashlight {
         const elapsedMinutes = elapsedTime / 60;
         this.drainMultiplier = 1 + elapsedMinutes * 0.2;
         
-        // Drain battery
-        this.battery -= this.baseDrainRate * this.drainMultiplier * deltaTime;
-        this.battery = Math.max(0, this.battery);
-        
         // Update spotlight target (points where camera is looking)
         const direction = new THREE.Vector3();
         this.camera.getWorldDirection(direction);
         this.target.position.copy(this.camera.position).add(direction.multiplyScalar(10));
+
+        if (!this.canIlluminate()) {
+            this.clearLightIntensity();
+            return;
+        }
+
+        // Drain battery
+        this.battery -= this.baseDrainRate * this.drainMultiplier * deltaTime;
+        this.battery = Math.max(0, this.battery);
         
         // Calculate intensity based on battery
         let intensity = (this.battery / 100) * this.maxIntensity;
@@ -103,6 +109,31 @@ export class Flashlight {
     isLowBattery() {
         return this.battery < this.flickerThreshold;
     }
+
+    setEnabled(enabled) {
+        this.isEnabled = enabled;
+        if (!this.isEnabled) {
+            this.clearLightIntensity();
+        }
+    }
+
+    toggleEnabled() {
+        this.setEnabled(!this.isEnabled);
+        return this.isEnabled;
+    }
+
+    getIsEnabled() {
+        return this.isEnabled;
+    }
+
+    canIlluminate() {
+        return this.isEnabled && this.battery > 0;
+    }
+
+    clearLightIntensity() {
+        this.spotlight.intensity = 0;
+        this.fillLight.intensity = 0;
+    }
     
     recharge(amount) {
         this.battery = Math.min(100, this.battery + amount);
@@ -115,7 +146,7 @@ export class Flashlight {
     
     // Check if a point is illuminated by the flashlight
     isPointIlluminated(point) {
-        if (this.battery <= 0) return false;
+        if (!this.canIlluminate()) return false;
         
         // Get flashlight direction
         const flashlightDir = new THREE.Vector3();
@@ -140,6 +171,7 @@ export class Flashlight {
     reset() {
         this.battery = 100;
         this.drainMultiplier = 1;
+        this.isEnabled = true;
         this.isFlickering = false;
         this.flickerTimer = 0;
         this.spotlight.intensity = this.maxIntensity;

@@ -10,6 +10,7 @@ Walk into newts to rescue them. Avoid cars, predators, and the cliff edge.
 - `WASD` / Joystick — Move
 - `Mouse` / Touch — Look around
 - Walk into newt — Auto-rescue
+- Flashlight button — Toggle the flashlight to save battery
 
 ## Run Locally
 

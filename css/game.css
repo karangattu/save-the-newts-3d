@@ -75,6 +75,7 @@ body {
     background-position: center;
 }
 
+.hidden,
 .overlay.hidden {
     display: none;
 }
@@ -550,6 +551,30 @@ button:hover {
     }
 }
 
+/* Flashlight toggle */
+#flashlight-toggle {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    z-index: 55;
+    padding: 10px 18px;
+    font-size: 0.85rem;
+    border-radius: 22px;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.9), rgba(255, 140, 0, 0.9));
+    color: #000;
+    box-shadow: 0 4px 18px rgba(255, 200, 0, 0.35);
+}
+
+#flashlight-toggle.off {
+    background: linear-gradient(135deg, rgba(120, 120, 120, 0.9), rgba(60, 60, 60, 0.9));
+    color: #fff;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+#flashlight-toggle i {
+    margin-right: 6px;
+}
+
 /* Falling overlay */
 #falling-overlay {
     position: fixed;
@@ -705,6 +730,29 @@ button:hover {
     box-shadow: 0 4px 20px rgba(0, 200, 100, 0.3),
         inset 0 0 15px rgba(255, 255, 255, 0.1);
     transition: transform 0.1s, box-shadow 0.1s;
+}
+
+#mobile-buttons #flashlight-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+}
+
+#mobile-buttons #flashlight-toggle i {
+    font-size: 1.6rem;
+    margin-right: 0;
+    margin-bottom: 4px;
 }
 
 #rescue-button i {
@@ -969,6 +1017,16 @@ button:hover {
     }
 
     #rescue-button i {
+        font-size: 1.3rem;
+    }
+
+    #mobile-buttons #flashlight-toggle {
+        width: 85px;
+        height: 85px;
+        font-size: 0.7rem;
+    }
+
+    #mobile-buttons #flashlight-toggle i {
         font-size: 1.3rem;
     }
 

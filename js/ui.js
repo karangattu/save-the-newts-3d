@@ -43,6 +43,8 @@ export class UIManager {
         // Haptic support detection
         this.hasHaptics = 'vibrate' in navigator;
 
+        this.flashlightIcon = '<i class="fas fa-lightbulb" aria-hidden="true"></i>';
+
         // First time player check for onboarding
         this.isFirstPlay = !localStorage.getItem('newtRescuePlayed');
 
@@ -53,6 +55,7 @@ export class UIManager {
 
         // Create battery boost indicator
         this.createBatteryBoostIndicator();
+        this.createFlashlightToggle();
 
         // Load saved player name
         const savedName = localStorage.getItem('newtRescuePlayerName');
@@ -75,6 +78,22 @@ export class UIManager {
         this.batteryBoost = boost;
 
         this.createRescueFeedback();
+    }
+
+    createFlashlightToggle() {
+        const toggle = document.createElement('button');
+        toggle.id = 'flashlight-toggle';
+        toggle.type = 'button';
+        toggle.classList.add('hidden');
+
+        const mobileButtons = document.getElementById('mobile-buttons');
+        if (this.isMobile && mobileButtons) {
+            mobileButtons.appendChild(toggle);
+        } else {
+            document.body.appendChild(toggle);
+        }
+
+        this.flashlightToggle = toggle;
     }
 
     createRescueFeedback() {
@@ -108,12 +127,18 @@ export class UIManager {
         if (this.isMobile) {
             this.mobileControls.classList.remove('hidden');
         }
+        if (this.flashlightToggle) {
+            this.flashlightToggle.classList.remove('hidden');
+        }
     }
 
     hideGameScreen() {
         this.hud.classList.add('hidden');
         if (this.mobileControls) {
             this.mobileControls.classList.add('hidden');
+        }
+        if (this.flashlightToggle) {
+            this.flashlightToggle.classList.add('hidden');
         }
     }
 
@@ -192,6 +217,17 @@ export class UIManager {
 
     updateTime(seconds) {
         this.timeElement.textContent = this.formatTime(seconds);
+    }
+
+    setFlashlightToggle(enabled) {
+        if (!this.flashlightToggle) return;
+        const label = enabled ? 'Turn off flashlight' : 'Turn on flashlight';
+        this.flashlightToggle.innerHTML = enabled
+            ? `${this.flashlightIcon} Turn Off`
+            : `${this.flashlightIcon} Turn On`;
+        this.flashlightToggle.setAttribute('aria-label', label);
+        this.flashlightToggle.classList.toggle('off', !enabled);
+        this.flashlightToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     }
 
     formatTime(seconds) {
@@ -479,5 +515,11 @@ export class UIManager {
 
     onRestartClick(callback) {
         this.restartButton.addEventListener('click', callback);
+    }
+
+    onFlashlightToggle(callback) {
+        if (this.flashlightToggle) {
+            this.flashlightToggle.addEventListener('click', callback);
+        }
     }
 }
