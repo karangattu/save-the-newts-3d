@@ -164,6 +164,9 @@ class Game {
         if (!isEnabled) {
             this.audioManager.stopLowBatteryWarning();
         }
+        if (!this.isMobile && this.state === 'playing' && !this.player.isLocked()) {
+            this.player.lock();
+        }
     }
 
 
