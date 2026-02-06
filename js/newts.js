@@ -2,9 +2,10 @@
 import * as THREE from 'three';
 
 export class NewtManager {
-    constructor(scene, flashlight) {
+    constructor(scene, flashlight, roadCurve = null) {
         this.scene = scene;
         this.flashlight = flashlight;
+        this.roadCurve = roadCurve;
 
         this.newts = [];
         this.rescuedCount = 0;
@@ -13,10 +14,14 @@ export class NewtManager {
         this.baseSpawnInterval = 3; // seconds
         this.spawnTimer = 0;
         this.roadWidth = 12;
-        this.roadLength = 200;
+        this.roadLength = 280; // Increased from 200
 
         // Rescue settings
         this.rescueDistance = 1.5; // Auto-rescue distance
+    }
+    
+    setRoadCurve(roadCurve) {
+        this.roadCurve = roadCurve;
     }
 
     createNewtMesh() {
@@ -203,25 +208,45 @@ export class NewtManager {
     spawnNewt() {
         const mesh = this.createNewtMesh();
 
-        // Random spawn position at road edge
-        const side = Math.random() > 0.5 ? 1 : -1;
-        const startX = side * (this.roadWidth / 2 + 2);
-        const targetX = -side * (this.roadWidth / 2 + 2);
-        const z = (Math.random() - 0.5) * (this.roadLength - 40);
-
-        mesh.position.set(startX, 0, z);
-
-        // Face direction of travel
-        if (side > 0) {
-            mesh.rotation.y = Math.PI;
+        // Random spawn position at road edge along the curved road
+        const side = Math.random() > 0.5 ? 1 : -1; // 1 = right side, -1 = left side
+        const z = (Math.random() - 0.5) * (this.roadLength - 60);
+        
+        let startPosition, targetPosition, roadNormal;
+        
+        if (this.roadCurve) {
+            // Find position on road curve for this Z
+            const roadData = this.getRoadDataAtZ(z);
+            const roadCenter = roadData.point;
+            roadNormal = roadData.normal;
+            
+            // Calculate start position at road edge
+            const edgeOffset = roadNormal.clone().multiplyScalar(side * (this.roadWidth / 2 + 2));
+            startPosition = roadCenter.clone().add(edgeOffset);
+            
+            // Calculate target position on opposite side
+            const targetOffset = roadNormal.clone().multiplyScalar(-side * (this.roadWidth / 2 + 2));
+            targetPosition = roadCenter.clone().add(targetOffset);
+        } else {
+            // Fallback for straight road
+            startPosition = new THREE.Vector3(side * (this.roadWidth / 2 + 2), 0, z);
+            targetPosition = new THREE.Vector3(-side * (this.roadWidth / 2 + 2), 0, z);
+            roadNormal = new THREE.Vector3(1, 0, 0);
         }
+
+        mesh.position.copy(startPosition);
+
+        // Face direction of travel (across the road)
+        const direction = new THREE.Vector3().subVectors(targetPosition, startPosition).normalize();
+        mesh.rotation.y = Math.atan2(direction.x, direction.z);
 
         this.scene.add(mesh);
 
         const newt = {
             mesh: mesh,
-            startX: startX,
-            targetX: targetX,
+            startPosition: startPosition.clone(),
+            targetPosition: targetPosition.clone(),
+            roadNormal: roadNormal.clone(),
             speed: 0.3 + Math.random() * 0.4, // Slower, more realistic speed (0.3-0.7)
             isIlluminated: false,
             illuminationTime: 0,
@@ -234,6 +259,37 @@ export class NewtManager {
         };
 
         this.newts.push(newt);
+    }
+    
+    // Helper method to get road data at a specific Z coordinate
+    getRoadDataAtZ(z) {
+        if (!this.roadCurve) {
+            return {
+                point: new THREE.Vector3(0, 0, z),
+                tangent: new THREE.Vector3(0, 0, 1),
+                normal: new THREE.Vector3(1, 0, 0)
+            };
+        }
+        
+        // Find the closest point on the curve to this Z
+        let closestT = 0;
+        let minZDiff = Infinity;
+        
+        for (let i = 0; i <= 100; i++) {
+            const t = i / 100;
+            const point = this.roadCurve.getPoint(t);
+            const zDiff = Math.abs(point.z - z);
+            if (zDiff < minZDiff) {
+                minZDiff = zDiff;
+                closestT = t;
+            }
+        }
+        
+        const point = this.roadCurve.getPoint(closestT);
+        const tangent = this.roadCurve.getTangent(closestT);
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+        
+        return { point, tangent, normal, t: closestT };
     }
 
     update(deltaTime, elapsedTime, playerPosition) {
@@ -276,14 +332,26 @@ export class NewtManager {
                 }
             }
 
-            // Movement - newts cross regardless of cars (realistic behavior)
-            const direction = newt.targetX > newt.startX ? 1 : -1;
-
+            // Movement - newts cross perpendicular to road direction
             if (!newt.isPaused) {
-                // Normal movement towards target
-                newt.mesh.position.x += direction * newt.speed * deltaTime;
+                // Calculate direction to target
+                const moveDir = new THREE.Vector3().subVectors(newt.targetPosition, newt.mesh.position);
+                const distanceToTarget = moveDir.length();
+                moveDir.normalize();
+                
+                // Move towards target
+                const moveDistance = newt.speed * deltaTime;
+                newt.mesh.position.add(moveDir.clone().multiplyScalar(moveDistance));
+                
                 // Animate walking cycle when moving
                 newt.walkCycle += deltaTime * newt.speed * 12;
+                
+                // Check if crossed road (reached or passed target)
+                if (distanceToTarget < 0.5 || newt.mesh.position.distanceTo(newt.startPosition) > newt.startPosition.distanceTo(newt.targetPosition)) {
+                    this.scene.remove(newt.mesh);
+                    this.newts.splice(i, 1);
+                    continue;
+                }
             }
 
             // Get leg references
@@ -331,12 +399,6 @@ export class NewtManager {
                 continue;
             }
 
-            // Remove if crossed road
-            if ((direction > 0 && newt.mesh.position.x > newt.targetX) ||
-                (direction < 0 && newt.mesh.position.x < newt.targetX)) {
-                this.scene.remove(newt.mesh);
-                this.newts.splice(i, 1);
-            }
         }
 
         return rescuedNewts;

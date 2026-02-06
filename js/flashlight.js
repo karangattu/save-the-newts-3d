@@ -18,6 +18,9 @@ export class Flashlight {
         this.isFlickering = false;
         this.flickerTimer = 0;
         
+        // Toggle state
+        this.isOn = true;
+        
         this.init();
     }
     
@@ -59,37 +62,55 @@ export class Flashlight {
         const elapsedMinutes = elapsedTime / 60;
         this.drainMultiplier = 1 + elapsedMinutes * 0.2;
         
-        // Drain battery
-        this.battery -= this.baseDrainRate * this.drainMultiplier * deltaTime;
-        this.battery = Math.max(0, this.battery);
+        // Only drain battery if flashlight is on
+        if (this.isOn && this.battery > 0) {
+            this.battery -= this.baseDrainRate * this.drainMultiplier * deltaTime;
+            this.battery = Math.max(0, this.battery);
+        }
         
         // Update spotlight target (points where camera is looking)
         const direction = new THREE.Vector3();
         this.camera.getWorldDirection(direction);
         this.target.position.copy(this.camera.position).add(direction.multiplyScalar(10));
         
-        // Calculate intensity based on battery
-        let intensity = (this.battery / 100) * this.maxIntensity;
-        
-        // Flicker effect when low battery
-        if (this.battery < this.flickerThreshold && this.battery > 0) {
-            this.flickerTimer += deltaTime;
+        // Calculate intensity based on battery and on/off state
+        let intensity = 0;
+        if (this.isOn && this.battery > 0) {
+            intensity = (this.battery / 100) * this.maxIntensity;
             
-            // Random flicker
-            if (Math.random() < 0.1) {
-                this.isFlickering = true;
-            }
-            
-            if (this.isFlickering) {
-                intensity *= Math.random() * 0.5 + 0.3;
-                if (Math.random() < 0.3) {
-                    this.isFlickering = false;
+            // Flicker effect when low battery
+            if (this.battery < this.flickerThreshold) {
+                this.flickerTimer += deltaTime;
+                
+                // Random flicker
+                if (Math.random() < 0.1) {
+                    this.isFlickering = true;
+                }
+                
+                if (this.isFlickering) {
+                    intensity *= Math.random() * 0.5 + 0.3;
+                    if (Math.random() < 0.3) {
+                        this.isFlickering = false;
+                    }
                 }
             }
         }
         
         this.spotlight.intensity = intensity;
-        this.fillLight.intensity = (this.battery / 100) * 0.8;
+        this.fillLight.intensity = this.isOn && this.battery > 0 ? (this.battery / 100) * 0.8 : 0;
+    }
+    
+    toggle() {
+        this.isOn = !this.isOn;
+        return this.isOn;
+    }
+    
+    setOn(state) {
+        this.isOn = state;
+    }
+    
+    getIsOn() {
+        return this.isOn;
     }
     
     getBattery() {
@@ -115,7 +136,8 @@ export class Flashlight {
     
     // Check if a point is illuminated by the flashlight
     isPointIlluminated(point) {
-        if (this.battery <= 0) return false;
+        // Only illuminate if flashlight is on and has battery
+        if (!this.isOn || this.battery <= 0) return false;
         
         // Get flashlight direction
         const flashlightDir = new THREE.Vector3();
@@ -142,7 +164,8 @@ export class Flashlight {
         this.drainMultiplier = 1;
         this.isFlickering = false;
         this.flickerTimer = 0;
+        this.isOn = true; // Reset to on
         this.spotlight.intensity = this.maxIntensity;
-        this.fillLight.intensity = 0.3;
+        this.fillLight.intensity = 0.8;
     }
 }

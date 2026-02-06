@@ -1,5 +1,6 @@
 // main.js - Game loop, state management, and integration
-import { GameScene } from './scene.js';
+import * as THREE from 'three';
+import { LevelManager } from './levels.js';
 import { Player } from './player.js';
 import { Flashlight } from './flashlight.js';
 import { NewtManager } from './newts.js';
@@ -12,9 +13,15 @@ import { PredatorManager } from './predators.js';
 class Game {
     constructor() {
         // Game state
-        this.state = 'menu'; // 'menu', 'playing', 'gameover'
+        this.state = 'menu'; // 'menu', 'playing', 'gameover', 'loading'
         this.isMobile = false;
         this.isVisibilityPaused = false;
+
+        // Level tracking
+        this.currentLevel = 1;
+        this.levelScore = 0; // Score within current level
+        this.totalScore = 0; // Total across levels
+        this.newtsForNextLevel = 3;
 
         // Timing
         this.clock = null;
@@ -40,37 +47,99 @@ class Game {
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
 
-        // Create scene (pass mobile flag for optimizations)
-        this.gameScene = new GameScene(this.isMobile);
+        // Create scene renderer and camera first
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        this.camera.position.set(0, 1.7, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.renderer.shadowMap.enabled = !this.isMobile;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Create level manager
+        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
+
+        // Load level 1
+        const levelData = this.levelManager.loadLevel(1);
+        this.roadCurve = levelData.roadCurve;
+        this.roadBounds = levelData.roadBounds;
 
         // Create player with mobile flag
         this.player = new Player(
-            this.gameScene.camera,
-            this.gameScene.scene,
-            this.gameScene.roadBounds,
+            this.camera,
+            this.scene,
+            this.roadBounds,
             this.isMobile
         );
 
         // Create flashlight (brighter on mobile)
         this.flashlight = new Flashlight(
-            this.gameScene.camera,
-            this.gameScene.scene,
+            this.camera,
+            this.scene,
             this.isMobile
         );
 
         // Create managers
         this.newtManager = new NewtManager(
-            this.gameScene.scene,
-            this.flashlight
+            this.scene,
+            this.flashlight,
+            this.roadCurve
         );
 
-        this.carManager = new CarManager(this.gameScene.scene);
+        this.carManager = new CarManager(this.scene, this.roadCurve);
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
-        this.predatorManager = new PredatorManager(this.gameScene.scene, this.gameScene.camera);
+        this.predatorManager = new PredatorManager(this.scene, this.camera);
+
+        // Setup flashlight toggle callbacks
+        this.setupFlashlightToggle();
 
         // Show start screen
         this.ui.showStartScreen();
+
+        // Append renderer to container
+        document.getElementById('game-container').appendChild(this.renderer.domElement);
+
+        // Handle window resize
+        window.addEventListener('resize', () => this.onWindowResize());
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+    }
+
+    setupFlashlightToggle() {
+        // Desktop: F key
+        this.player.setFlashlightToggleCallback(() => this.toggleFlashlight());
+
+        // Mobile: button
+        this.ui.onFlashlightToggle(() => this.toggleFlashlight());
+    }
+
+    toggleFlashlight() {
+        if (this.state !== 'playing') return;
+
+        const isOn = this.flashlight.toggle();
+
+        // Update mobile button appearance
+        this.ui.updateFlashlightButton(isOn);
+
+        // Haptic feedback for mobile
+        if (this.isMobile) {
+            this.ui.hapticLight();
+        }
     }
 
     setupEventListeners() {
@@ -78,7 +147,7 @@ class Game {
         this.ui.onStartClick(() => this.startGame());
 
         // Restart button
-        this.ui.onRestartClick(() => this.startGame());
+        this.ui.onRestartClick(() => this.restartGame());
 
         // Leaderboard buttons
         this.ui.onViewLeaderboard(() => this.showLeaderboard());
@@ -132,7 +201,7 @@ class Game {
         this.ui.updateBattery(100);
         this.ui.updateScore(0);
         this.ui.updateTime(0);
-
+        this.ui.updateLevel(this.currentLevel);
 
         // Show mobile onboarding on first play
         if (this.isMobile && this.ui.isFirstPlay) {
@@ -155,7 +224,88 @@ class Game {
         this.state = 'playing';
     }
 
+    restartGame() {
+        // Reset to level 1
+        this.currentLevel = 1;
+        this.levelScore = 0;
+        this.totalScore = 0;
 
+        // Reload level 1
+        const levelData = this.levelManager.loadLevel(1);
+        this.roadCurve = levelData.roadCurve;
+        this.roadBounds = levelData.roadBounds;
+
+        // Update player bounds
+        this.player.roadBounds = this.roadBounds;
+
+        // Update managers with new road curve
+        this.newtManager.setRoadCurve(this.roadCurve);
+        this.carManager.setRoadCurve(this.roadCurve);
+
+        this.startGame();
+    }
+
+    async loadNextLevel() {
+        this.state = 'loading';
+        this.currentLevel++;
+
+        // Show loading screen
+        this.ui.showLoadingScreen(`Loading Level ${this.currentLevel}...`);
+
+        // Stop ambient audio
+        this.audioManager.stopAmbient();
+
+        // Small delay for loading screen to render
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Load new level
+        const levelData = this.levelManager.loadLevel(this.currentLevel);
+        this.roadCurve = levelData.roadCurve;
+        this.roadBounds = levelData.roadBounds;
+
+        // Update player
+        this.player.reset();
+        this.player.roadBounds = this.roadBounds;
+
+        // Update managers
+        this.newtManager.reset();
+        this.newtManager.setRoadCurve(this.roadCurve);
+        this.carManager.reset();
+        this.carManager.setRoadCurve(this.roadCurve);
+
+        // Reset flashlight
+        this.flashlight.reset();
+
+        // Reset car engine sounds
+        this.carEngineSounds.forEach((sound) => {
+            this.audioManager.stopCarEngine(sound);
+        });
+        this.carEngineSounds.clear();
+
+        // Clear predator
+        this.predatorManager.reset();
+
+        // Add to total score
+        this.totalScore += this.levelScore;
+        this.levelScore = 0;
+
+        // Small delay before starting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Hide loading screen
+        this.ui.hideLoadingScreen();
+
+        // Update UI
+        this.ui.updateLevel(this.currentLevel);
+        this.ui.updateScore(this.totalScore);
+        this.ui.showLevelStartMessage(this.currentLevel);
+
+        // Resume ambient audio
+        this.audioManager.startAmbient();
+
+        // Set state back to playing
+        this.state = 'playing';
+    }
 
     gameOver(reason) {
         this.state = 'gameover';
@@ -177,7 +327,7 @@ class Game {
             this.audioManager.playCarHitSound();
         }
         // Falling and predator sounds already played before gameOver is called
-        if (reason !== 'cliff' && reason !== 'mountain-lion' && reason !== 'bear') {
+        if (reason !== 'cliff' && reason !== 'mountain-lion' && reason !== 'bear' && reason !== 'trench') {
             this.audioManager.playGameOverSound();
         }
 
@@ -185,31 +335,34 @@ class Game {
         this.player.unlock();
 
         // Reset camera rotation if fell
-        this.gameScene.camera.rotation.z = 0;
+        this.camera.rotation.z = 0;
 
         // Clear falling darkness
         this.ui.setFallingDarkness(0);
 
+        // Calculate final score
+        const finalScore = this.totalScore + this.levelScore;
+
         // Update high score
-        const score = this.newtManager.getRescuedCount();
-        if (score > this.highScore) {
-            this.highScore = score;
+        if (finalScore > this.highScore) {
+            this.highScore = finalScore;
             localStorage.setItem('newtRescueHighScore', this.highScore);
         }
 
         // Show game over screen
-        this.ui.showGameOver(reason, score, this.elapsedTime, this.highScore);
+        this.ui.showGameOver(reason, finalScore, this.elapsedTime, this.highScore, this.currentLevel);
     }
 
     update(deltaTime) {
+        if (this.state === 'loading') return;
         if (this.state !== 'playing') return;
 
         // Update elapsed time
         this.elapsedTime += deltaTime;
 
-        // Update rain and splashes
-        this.gameScene.updateRain(deltaTime, this.player.getPosition());
-        this.gameScene.updateSplashes(deltaTime, this.player.getPosition());
+        // Update rain/dust and splashes through level manager
+        this.levelManager.updateRain(deltaTime, this.player.getPosition());
+        this.levelManager.updateSplashes(deltaTime, this.player.getPosition());
 
         // Update player
         const isMoving = this.player.update(deltaTime);
@@ -219,7 +372,7 @@ class Game {
             this.audioManager.playFootstep();
         }
 
-        // Check danger zones (cliff and forest)
+        // Check danger zones based on level
         const dangerCheck = this.checkDangerZones();
         if (dangerCheck.inDanger) {
             this.handleDangerZone(dangerCheck);
@@ -247,9 +400,18 @@ class Game {
                 this.flashlight.recharge(8); // +8% battery per newt
                 this.ui.showBatteryBoost();
             });
-            // Update score once for total count
-            this.ui.updateScore(this.newtManager.getRescuedCount());
+
+            // Update score
+            this.levelScore += rescuedNewts.length;
+            const displayScore = this.totalScore + this.levelScore;
+            this.ui.updateScore(displayScore);
             this.ui.updateBattery(this.flashlight.getBattery());
+
+            // Check for level progression
+            if (this.levelScore >= this.newtsForNextLevel && this.currentLevel === 1) {
+                this.loadNextLevel();
+                return;
+            }
         }
 
         // Update cars
@@ -282,8 +444,7 @@ class Game {
         if (nearMissResult) {
             this.audioManager.playNearMissSound();
             this.ui.triggerNearMissEffect();
-            this.ui.hapticWarning(); // Haptic feedback for near-miss
-            this.gameScene.triggerCameraShake(0.15);
+            this.ui.hapticWarning();
         }
 
         // Check battery
@@ -306,19 +467,18 @@ class Game {
 
     checkDangerZones() {
         const playerPos = this.player.getPosition();
-        const dangerZones = this.gameScene.dangerZones;
+        const dangerZones = this.levelManager.dangerZones;
 
-        // Check cliff (right side) - warning zone then fall zone
+        // Both levels use same danger zones: cliff and forest
+        // Check cliff (right side)
         if (playerPos.x > dangerZones.cliff + 4) {
-            // Past the edge - falling
             return { inDanger: true, type: 'cliff' };
         }
 
-        // Check forest (left side) - deeper in = more dangerous
+        // Check forest (left side)
         if (playerPos.x < dangerZones.forest) {
-            // Random chance of predator attack increases the deeper you go
             const depth = Math.abs(playerPos.x - dangerZones.forest);
-            const attackChance = Math.min(0.02 + (depth * 0.01), 0.15); // Up to 15% per frame
+            const attackChance = Math.min(0.02 + (depth * 0.01), 0.15);
 
             if (Math.random() < attackChance) {
                 const predator = Math.random() < 0.5 ? 'mountain lion' : 'bear';
@@ -331,10 +491,7 @@ class Game {
 
     handleDangerZone(dangerInfo) {
         if (dangerInfo.type === 'cliff') {
-            // Player at cliff edge - animate approach then fall
             this.state = 'falling';
-
-            // First walk to edge, then fall
             this.animateCliffApproach(() => {
                 this.audioManager.playFallingSound();
                 this.animateFalling(() => {
@@ -342,20 +499,15 @@ class Game {
                 });
             });
         } else if (dangerInfo.type === 'predator') {
-            // Predator attack - spawn and animate the predator
             this.state = 'attacked';
             const predator = dangerInfo.predator || 'mountain lion';
 
-            // Spawn the predator in the forest
             const playerPos = this.player.getPosition();
             this.predatorManager.spawnPredator(predator, playerPos);
 
-            // Play sound
             this.audioManager.playPredatorAttackSound(predator);
 
-            // Animate attack toward player
             this.predatorManager.animateAttack(playerPos, 1200, () => {
-                // Show attack screen then game over
                 this.ui.triggerPredatorAttack(predator);
                 setTimeout(() => {
                     this.predatorManager.removePredator();
@@ -366,31 +518,26 @@ class Game {
     }
 
     animateCliffApproach(callback) {
-        // Player stumbles to the edge before falling
         this.player.unlock();
 
         const startPos = this.player.getPosition().clone();
-        const edgeX = this.gameScene.dangerZones.cliff + 5; // Edge position
-        const duration = 800; // Quick stumble
+        const edgeX = this.levelManager.dangerZones.cliff + 5;
+        const duration = 800;
         const startTime = performance.now();
 
         const approach = () => {
             const elapsed = performance.now() - startTime;
             const progress = Math.min(elapsed / duration, 1);
 
-            // Stumble toward edge
-            const easeProgress = progress * (2 - progress); // Ease out
-            this.gameScene.camera.position.x = startPos.x + (edgeX - startPos.x) * easeProgress;
-
-            // Camera shake while stumbling
-            this.gameScene.camera.position.y = startPos.y + Math.sin(elapsed * 0.02) * 0.1;
-            this.gameScene.camera.rotation.z = Math.sin(elapsed * 0.015) * 0.05;
+            const easeProgress = progress * (2 - progress);
+            this.camera.position.x = startPos.x + (edgeX - startPos.x) * easeProgress;
+            this.camera.position.y = startPos.y + Math.sin(elapsed * 0.02) * 0.1;
+            this.camera.rotation.z = Math.sin(elapsed * 0.015) * 0.05;
 
             if (progress < 1) {
                 requestAnimationFrame(approach);
             } else {
-                // Brief pause at edge looking down
-                this.gameScene.camera.rotation.x = 0.5; // Look down
+                this.camera.rotation.x = 0.5;
                 setTimeout(callback, 300);
             }
         };
@@ -399,25 +546,19 @@ class Game {
     }
 
     animateFalling(callback) {
-        // Disable player controls
         this.player.unlock();
 
         const startY = this.player.getPosition().y;
-        const fallDuration = 2000; // 2 seconds
+        const fallDuration = 2000;
         const startTime = performance.now();
 
         const fall = () => {
             const elapsed = performance.now() - startTime;
             const progress = Math.min(elapsed / fallDuration, 1);
 
-            // Accelerating fall
             const fallDistance = progress * progress * 30;
-            this.gameScene.camera.position.y = startY - fallDistance;
-
-            // Spin slightly
-            this.gameScene.camera.rotation.z = progress * Math.PI * 0.5;
-
-            // Screen gets darker
+            this.camera.position.y = startY - fallDistance;
+            this.camera.rotation.z = progress * Math.PI * 0.5;
             this.ui.setFallingDarkness(progress);
 
             if (progress < 1) {
@@ -447,11 +588,9 @@ class Game {
         // Update existing sounds and remove old ones
         this.carEngineSounds.forEach((sound, car) => {
             if (!cars.includes(car)) {
-                // Car was removed
                 this.audioManager.stopCarEngine(sound);
                 this.carEngineSounds.delete(car);
             } else {
-                // Update sound based on distance
                 const distance = playerPos.distanceTo(car.mesh.position);
                 this.audioManager.updateCarEngine(sound, distance, car.speed);
             }
@@ -485,9 +624,7 @@ class Game {
             return;
         }
 
-        // Save player name for next time
         this.ui.savePlayerName(playerName);
-
         this.ui.setSubmitButtonLoading(true);
 
         const result = await this.leaderboard.submitScore(
@@ -510,20 +647,25 @@ class Game {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        // Calculate delta time
         const currentTime = performance.now() / 1000;
-        const deltaTime = Math.min(currentTime - this.lastTime, 0.1); // Cap at 100ms
+        let deltaTime = Math.min(currentTime - this.lastTime, 0.1);
+
+        if (this.smoothedDeltaTime === undefined) {
+            this.smoothedDeltaTime = deltaTime;
+        }
+        this.smoothedDeltaTime = this.smoothedDeltaTime * 0.8 + deltaTime * 0.2;
+        deltaTime = this.smoothedDeltaTime;
+
         this.lastTime = currentTime;
 
         if (this.isVisibilityPaused) {
             return;
         }
 
-        // Update game logic
         this.update(deltaTime);
 
         // Render scene
-        this.gameScene.render();
+        this.renderer.render(this.scene, this.camera);
     }
 }
 

@@ -13,8 +13,6 @@ export class UIManager {
         this.batteryPercent = document.getElementById('battery-percent');
         this.scoreElement = document.getElementById('score');
         this.timeElement = document.getElementById('time');
-        this.timeElement = document.getElementById('time');
-
 
         // Game over elements
         this.gameoverTitle = document.getElementById('gameover-title');
@@ -36,9 +34,23 @@ export class UIManager {
         // Buttons
         this.startButton = document.getElementById('start-button');
         this.restartButton = document.getElementById('restart-button');
+        this.flashlightToggleBtn = document.getElementById('flashlight-toggle-btn');
 
         // Mobile detection
         this.isMobile = this.detectMobile();
+
+        // Flashlight toggle callback
+        this.onFlashlightToggleCallback = null;
+        
+        // Setup flashlight toggle button for mobile
+        if (this.flashlightToggleBtn) {
+            this.flashlightToggleBtn.addEventListener('click', () => {
+                this.hapticMedium();
+                if (this.onFlashlightToggleCallback) {
+                    this.onFlashlightToggleCallback();
+                }
+            });
+        }
 
         // Haptic support detection
         this.hasHaptics = 'vibrate' in navigator;
@@ -46,13 +58,17 @@ export class UIManager {
         // First time player check for onboarding
         this.isFirstPlay = !localStorage.getItem('newtRescuePlayed');
 
-
-
         // Store last game data for submission
         this.lastGameData = null;
 
         // Create battery boost indicator
         this.createBatteryBoostIndicator();
+
+        // Create level indicator
+        this.createLevelIndicator();
+
+        // Create loading screen
+        this.createLoadingScreen();
 
         // Load saved player name
         const savedName = localStorage.getItem('newtRescuePlayerName');
@@ -85,6 +101,84 @@ export class UIManager {
         this.rescueFeedback = feedback;
     }
 
+    createLevelIndicator() {
+        const levelIndicator = document.createElement('div');
+        levelIndicator.id = 'level-indicator';
+        levelIndicator.innerHTML = '<i class="fas fa-layer-group"></i> <span id="level-number">1</span>';
+        document.body.appendChild(levelIndicator);
+        this.levelIndicator = levelIndicator;
+        this.levelNumberElement = document.getElementById('level-number');
+    }
+
+    createLoadingScreen() {
+        const loadingScreen = document.createElement('div');
+        loadingScreen.id = 'loading-screen';
+        loadingScreen.className = 'overlay hidden';
+        loadingScreen.innerHTML = `
+            <div class="overlay-content loading-content">
+                <div class="loading-spinner">
+                    <i class="fas fa-circle-notch fa-spin"></i>
+                </div>
+                <h2 id="loading-text">Loading...</h2>
+                <p class="loading-subtitle">Preparing the rescue mission</p>
+            </div>
+        `;
+        document.body.appendChild(loadingScreen);
+        this.loadingScreen = loadingScreen;
+        this.loadingText = document.getElementById('loading-text');
+    }
+
+    showLoadingScreen(text = 'Loading...') {
+        this.loadingText.textContent = text;
+        this.loadingScreen.classList.remove('hidden');
+        this.hideGameScreen();
+    }
+
+    hideLoadingScreen() {
+        this.loadingScreen.classList.add('hidden');
+        this.showGameScreen();
+    }
+
+    updateLevel(level) {
+        if (this.levelNumberElement) {
+            this.levelNumberElement.textContent = level;
+        }
+    }
+
+    showLevelStartMessage(level) {
+        const message = document.createElement('div');
+        message.id = 'level-start-message';
+        
+        let levelName = '';
+        let levelDescription = '';
+        
+        if (level === 1) {
+            levelName = 'Rainy Road';
+            levelDescription = 'Watch out for the cliff and forest predators!';
+        } else if (level === 2) {
+            levelName = 'Clear Night';
+            levelDescription = 'Same dangers, different curves, no rain!';
+        }
+        
+        message.innerHTML = `
+            <div class="level-start-content">
+                <div class="level-badge">LEVEL ${level}</div>
+                <h2>${levelName}</h2>
+                <p>${levelDescription}</p>
+            </div>
+        `;
+        document.body.appendChild(message);
+        
+        // Animate in
+        setTimeout(() => message.classList.add('show'), 50);
+        
+        // Remove after delay
+        setTimeout(() => {
+            message.classList.remove('show');
+            setTimeout(() => message.remove(), 500);
+        }, 3000);
+    }
+
     showRescueFeedback() {
         if (this.rescueFeedback) {
             this.rescueFeedback.classList.remove('show');
@@ -97,6 +191,7 @@ export class UIManager {
         this.startScreen.classList.remove('hidden');
         this.gameoverScreen.classList.add('hidden');
         this.hud.classList.add('hidden');
+        this.loadingScreen.classList.add('hidden');
     }
 
     hideStartScreen() {
@@ -108,6 +203,9 @@ export class UIManager {
         if (this.isMobile) {
             this.mobileControls.classList.remove('hidden');
         }
+        if (this.levelIndicator) {
+            this.levelIndicator.classList.remove('hidden');
+        }
     }
 
     hideGameScreen() {
@@ -115,9 +213,12 @@ export class UIManager {
         if (this.mobileControls) {
             this.mobileControls.classList.add('hidden');
         }
+        if (this.levelIndicator) {
+            this.levelIndicator.classList.add('hidden');
+        }
     }
 
-    showGameOver(reason, score, time, highScore) {
+    showGameOver(reason, score, time, highScore, level = 1) {
         this.gameoverScreen.classList.remove('hidden');
         this.hud.classList.add('hidden');
 
@@ -150,7 +251,7 @@ export class UIManager {
             this.gameoverTitle.innerHTML = '<i class="fas fa-ghost"></i> Stealth Vehicle!';
             this.gameoverReason.textContent = 'A silent vehicle came out of nowhere!';
         } else if (reason === 'cliff') {
-            this.gameoverTitle.innerHTML = '<i class="fas fa-water"></i> Drowned!';
+            this.gameoverTitle.innerHTML = '<i class="fas fa-water"></i> Fell Off Cliff!';
             this.gameoverReason.textContent = 'You fell off the cliff into the reservoir below.';
         } else if (reason === 'mountain-lion') {
             this.gameoverTitle.innerHTML = '<i class="fas fa-paw"></i> Mountain Lion Attack!';
@@ -200,8 +301,6 @@ export class UIManager {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-
-
     triggerNearMissEffect() {
         this.vignette.classList.add('active');
 
@@ -229,6 +328,29 @@ export class UIManager {
                 <i class="fas fa-paw"></i>
             </div>
             <div class="predator-name">${predatorType.toUpperCase()}!</div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Animate in
+        setTimeout(() => overlay.classList.add('active'), 50);
+
+        // Remove after game over shows
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 1500);
+    }
+
+    triggerMachineryAccident() {
+        // Create machinery accident overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'machinery-accident';
+        overlay.innerHTML = `
+            <div class="machinery-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="machinery-text">MACHINERY ACCIDENT!</div>
         `;
         document.body.appendChild(overlay);
 
@@ -442,7 +564,6 @@ export class UIManager {
                         <div class="tip-text">
                             <strong>Rescue Newts</strong>
                             <span>Walk over newts</span>
-
                         </div>
                     </div>
                 </div>
@@ -479,5 +600,23 @@ export class UIManager {
 
     onRestartClick(callback) {
         this.restartButton.addEventListener('click', callback);
+    }
+
+    // Flashlight toggle callback setter
+    onFlashlightToggle(callback) {
+        this.onFlashlightToggleCallback = callback;
+    }
+
+    // Update flashlight button appearance
+    updateFlashlightButton(isOn) {
+        if (this.flashlightToggleBtn) {
+            if (isOn) {
+                this.flashlightToggleBtn.classList.remove('off');
+                this.flashlightToggleBtn.innerHTML = '<i class="fas fa-lightbulb"></i><span class="btn-label">Light</span>';
+            } else {
+                this.flashlightToggleBtn.classList.add('off');
+                this.flashlightToggleBtn.innerHTML = '<i class="far fa-lightbulb"></i><span class="btn-label">Off</span>';
+            }
+        }
     }
 }

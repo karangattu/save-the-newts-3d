@@ -12,8 +12,9 @@ const VEHICLE_TYPES = {
 };
 
 export class CarManager {
-    constructor(scene) {
+    constructor(scene, roadCurve = null) {
         this.scene = scene;
+        this.roadCurve = roadCurve;
         
         this.cars = [];
         
@@ -21,7 +22,7 @@ export class CarManager {
         this.baseSpawnInterval = 4; // seconds
         this.spawnTimer = 0;
         this.roadWidth = 12;
-        this.roadLength = 200;
+        this.roadLength = 280; // Increased from 200
         
         // Stealth car settings
         this.baseStealthChance = 0.1; // 10% base chance
@@ -33,6 +34,10 @@ export class CarManager {
         
         // Callback for newt crush events
         this.onNewtCrushed = null;
+    }
+    
+    setRoadCurve(roadCurve) {
+        this.roadCurve = roadCurve;
     }
     
     getRandomVehicleType() {
@@ -540,18 +545,38 @@ export class CarManager {
         // Random lane (-3 or 3 for two-lane road)
         const lane = Math.random() > 0.5 ? 3 : -3;
         
-        // Direction based on lane (right lane goes forward, left goes back)
-        const direction = lane > 0 ? -1 : 1;
+        // Direction based on lane (right lane goes forward/positive Z, left goes back/negative Z)
+        const direction = lane > 0 ? 1 : -1;
         
-        // Start position
-        const startZ = direction > 0 ? -this.roadLength / 2 - 10 : this.roadLength / 2 + 10;
+        // Start at either end of the road curve
+        let startT, startPoint, startTangent;
+        if (direction > 0) {
+            // Going from -Z to +Z (start at beginning of curve)
+            startT = 0;
+        } else {
+            // Going from +Z to -Z (start at end of curve)
+            startT = 1;
+        }
         
-        mesh.position.set(lane, 0, startZ);
+        if (this.roadCurve) {
+            startPoint = this.roadCurve.getPoint(startT);
+            startTangent = this.roadCurve.getTangent(startT);
+        } else {
+            // Fallback for straight road
+            startPoint = new THREE.Vector3(0, 0, direction > 0 ? -this.roadLength / 2 : this.roadLength / 2);
+            startTangent = new THREE.Vector3(0, 0, direction > 0 ? 1 : -1);
+        }
+        
+        // Calculate lane offset (perpendicular to road direction)
+        const normal = new THREE.Vector3(-startTangent.z, 0, startTangent.x).normalize();
+        const laneOffset = normal.clone().multiplyScalar(lane);
+        const finalPosition = startPoint.clone().add(laneOffset);
+        
+        mesh.position.copy(finalPosition);
         
         // Rotate car to face direction of travel
-        if (direction < 0) {
-            mesh.rotation.y = Math.PI;
-        }
+        const angle = Math.atan2(startTangent.x, startTangent.z);
+        mesh.rotation.y = angle + (direction > 0 ? 0 : Math.PI);
         
         this.scene.add(mesh);
         
@@ -568,7 +593,9 @@ export class CarManager {
             speed: baseSpeed + Math.random() * 6,
             isStealth: isStealth,
             hasTriggeredNearMiss: false,
-            vehicleType: vehicleType
+            vehicleType: vehicleType,
+            curveT: startT, // Position along the curve (0 to 1)
+            targetPosition: finalPosition.clone()
         };
         
         this.cars.push(car);
@@ -593,14 +620,56 @@ export class CarManager {
         for (let i = this.cars.length - 1; i >= 0; i--) {
             const car = this.cars[i];
             
-            // Move car
-            car.mesh.position.z += car.direction * car.speed * deltaTime;
-            
-            // Remove if off-screen
-            const removeZ = this.roadLength / 2 + 20;
-            if (car.mesh.position.z > removeZ || car.mesh.position.z < -removeZ) {
-                this.scene.remove(car.mesh);
-                this.cars.splice(i, 1);
+            if (this.roadCurve) {
+                // Move along the curved road
+                // Calculate how much to advance along curve based on speed
+                const curveLength = this.roadCurve.getLength();
+                const moveDistance = car.speed * deltaTime;
+                const tDelta = moveDistance / curveLength;
+                
+                // Update curve position
+                car.curveT += car.direction * tDelta;
+                
+                // Check if car reached end of road
+                if (car.curveT > 1 || car.curveT < 0) {
+                    this.scene.remove(car.mesh);
+                    this.cars.splice(i, 1);
+                    continue;
+                }
+                
+                // Get new position on curve
+                const curvePoint = this.roadCurve.getPoint(car.curveT);
+                const tangent = this.roadCurve.getTangent(car.curveT);
+                
+                // Calculate lane offset
+                const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+                const laneOffset = normal.clone().multiplyScalar(car.lane);
+                const targetPosition = curvePoint.clone().add(laneOffset);
+                
+                // Smooth movement - interpolate towards target
+                car.mesh.position.lerp(targetPosition, 0.3);
+                
+                // Smooth rotation - look along tangent
+                const targetAngle = Math.atan2(tangent.x, tangent.z) + (car.direction > 0 ? 0 : Math.PI);
+                const currentRotation = car.mesh.rotation.y;
+                
+                // Smooth rotation interpolation
+                let angleDiff = targetAngle - currentRotation;
+                // Normalize angle to -PI to PI
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                car.mesh.rotation.y = currentRotation + angleDiff * 0.1;
+                
+            } else {
+                // Fallback: straight road movement
+                car.mesh.position.z += car.direction * car.speed * deltaTime;
+                
+                // Remove if off-screen
+                const removeZ = this.roadLength / 2 + 20;
+                if (car.mesh.position.z > removeZ || car.mesh.position.z < -removeZ) {
+                    this.scene.remove(car.mesh);
+                    this.cars.splice(i, 1);
+                }
             }
         }
     }

@@ -163,7 +163,17 @@ export class Player {
             case 'ArrowRight':
                 this.moveRight = true;
                 break;
+            case 'KeyF':
+                // Flashlight toggle - will be handled by game
+                if (this.onFlashlightToggle) {
+                    this.onFlashlightToggle();
+                }
+                break;
         }
+    }
+
+    setFlashlightToggleCallback(callback) {
+        this.onFlashlightToggle = callback;
     }
     
     onKeyUp(event) {

@@ -17,6 +17,14 @@ export class GameScene {
         this.rainUpdateAccumulator = 0;
         this.splashUpdateAccumulator = 0;
         
+        // Road curve for curved road
+        this.roadCurve = null;
+        this.roadPath = null;
+        
+        // Smooth camera follow
+        this.targetCameraPosition = new THREE.Vector3();
+        this.cameraVelocity = new THREE.Vector3();
+        
         this.init();
     }
     
@@ -65,79 +73,175 @@ export class GameScene {
     }
     
     createRoad() {
-        // Road dimensions
+        // Larger road dimensions
         const roadWidth = 12;
-        const roadLength = 200;
+        const roadLength = 280; // Increased from 200
         
-        // Main road surface - wet asphalt with reflections
-        const roadGeometry = new THREE.PlaneGeometry(roadWidth, roadLength);
+        // Create a winding curved road path using CatmullRomCurve3
+        // The road will wind left and right as it goes along Z
+        const curvePoints = [
+            new THREE.Vector3(2, 0, -roadLength/2),
+            new THREE.Vector3(-3, 0, -roadLength/2 + 40),
+            new THREE.Vector3(4, 0, -roadLength/2 + 90),
+            new THREE.Vector3(-2, 0, -roadLength/2 + 140),
+            new THREE.Vector3(3, 0, -roadLength/2 + 190),
+            new THREE.Vector3(0, 0, roadLength/2)
+        ];
+        
+        this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
+        this.roadCurve.tension = 0.5;
+        
+        // Create road geometry using extrusion along the curve
+        const roadShape = new THREE.Shape();
+        roadShape.moveTo(-roadWidth/2, 0);
+        roadShape.lineTo(roadWidth/2, 0);
+        roadShape.lineTo(roadWidth/2, 1);
+        roadShape.lineTo(-roadWidth/2, 1);
+        roadShape.lineTo(-roadWidth/2, 0);
+        
+        const extrudeSettings = {
+            steps: 100,
+            extrudePath: this.roadCurve,
+            bevelEnabled: false
+        };
+        
+        const roadGeometry = new THREE.ExtrudeGeometry(roadShape, extrudeSettings);
         const roadMaterial = new THREE.MeshStandardMaterial({
             color: 0x1a1a1a,
-            roughness: 0.3, // Lower roughness for wet reflective look
-            metalness: 0.4, // Higher metalness for reflections
+            roughness: 0.3,
+            metalness: 0.4,
             envMapIntensity: 0.8
         });
+        
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.rotation.x = -Math.PI / 2;
         road.position.y = 0;
         road.receiveShadow = true;
         this.scene.add(road);
-        this.roadMesh = road; // Store reference for effects
+        this.roadMesh = road;
         
-        // Road edge lines (white)
-        const lineGeometry = new THREE.PlaneGeometry(0.3, roadLength);
+        // Create road markings along the curve
+        this.createRoadMarkings(roadWidth);
+        
+        // Store road bounds for player movement (expanded for larger map)
+        this.roadBounds = {
+            minX: -35,
+            maxX: 30,
+            minZ: -roadLength/2 + 10,
+            maxZ: roadLength/2 - 10
+        };
+        
+        // Danger zones (relative to road center)
+        this.dangerZones = {
+            forest: -12,
+            cliff: 14
+        };
+    }
+    
+    createRoadMarkings(roadWidth) {
+        // Create edge lines along the curve
+        const edgeLinePoints = [];
+        const centerLinePoints = [];
+        const steps = 100;
+        
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const point = this.roadCurve.getPoint(t);
+            const tangent = this.roadCurve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            
+            // Left edge
+            const leftPoint = point.clone().add(normal.clone().multiplyScalar(-roadWidth/2 + 0.5));
+            edgeLinePoints.push(leftPoint);
+            
+            // Right edge  
+            const rightPoint = point.clone().add(normal.clone().multiplyScalar(roadWidth/2 - 0.5));
+            edgeLinePoints.push(rightPoint);
+            
+            // Center line (dashed - every other segment)
+            if (i % 6 < 3) {
+                const centerPoint = point.clone();
+                centerLinePoints.push(centerPoint);
+            }
+        }
+        
+        // Create edge lines using TubeGeometry for smooth curves
+        const leftEdgeCurve = new THREE.CatmullRomCurve3(
+            edgeLinePoints.filter((_, i) => i % 2 === 0)
+        );
+        const rightEdgeCurve = new THREE.CatmullRomCurve3(
+            edgeLinePoints.filter((_, i) => i % 2 === 1)
+        );
+        
         const lineMaterial = new THREE.MeshStandardMaterial({
             color: 0xffffff,
             roughness: 0.5
         });
         
-        const leftLine = new THREE.Mesh(lineGeometry, lineMaterial);
-        leftLine.rotation.x = -Math.PI / 2;
-        leftLine.position.set(-roadWidth/2 + 0.5, 0.01, 0);
+        // Create thin tubes for edge lines
+        const leftLineGeo = new THREE.TubeGeometry(leftEdgeCurve, 100, 0.08, 4, false);
+        const leftLine = new THREE.Mesh(leftLineGeo, lineMaterial);
+        leftLine.position.y = 0.02;
         this.scene.add(leftLine);
         
-        const rightLine = new THREE.Mesh(lineGeometry, lineMaterial);
-        rightLine.rotation.x = -Math.PI / 2;
-        rightLine.position.set(roadWidth/2 - 0.5, 0.01, 0);
+        const rightLineGeo = new THREE.TubeGeometry(rightEdgeCurve, 100, 0.08, 4, false);
+        const rightLine = new THREE.Mesh(rightLineGeo, lineMaterial);
+        rightLine.position.y = 0.02;
         this.scene.add(rightLine);
         
-        // Center dashed lines (yellow)
+        // Create center dashed line
         const dashMaterial = new THREE.MeshStandardMaterial({
             color: 0xffcc00,
             roughness: 0.5
         });
         
-        for (let z = -roadLength/2; z < roadLength/2; z += 6) {
-            const dash = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.2, 3),
-                dashMaterial
-            );
-            dash.rotation.x = -Math.PI / 2;
-            dash.position.set(0, 0.01, z);
+        // Create dashed segments along the center
+        for (let i = 0; i < 100; i += 6) {
+            const t = i / 100;
+            const t2 = Math.min((i + 3) / 100, 1);
+            
+            const point1 = this.roadCurve.getPoint(t);
+            const point2 = this.roadCurve.getPoint(t2);
+            
+            const dashLength = point1.distanceTo(point2);
+            const dashGeo = new THREE.BoxGeometry(0.15, 0.02, dashLength);
+            const dash = new THREE.Mesh(dashGeo, dashMaterial);
+            
+            dash.position.copy(point1.clone().add(point2).multiplyScalar(0.5));
+            dash.position.y = 0.02;
+            dash.lookAt(point2);
             this.scene.add(dash);
         }
+    }
+    
+    // Get the road center position and direction at a given Z coordinate
+    getRoadDataAtZ(z) {
+        // Find the closest point on the curve to this Z
+        let closestT = 0;
+        let minZDiff = Infinity;
         
-        // Store road bounds for player movement
-        // Extended bounds to allow entering danger zones
-        this.roadBounds = {
-            minX: -25,  // Deep into forest (danger zone starts at -15)
-            maxX: 20,   // Over the cliff edge (danger zone starts at 12)
-            minZ: -roadLength/2 + 10,
-            maxZ: roadLength/2 - 10
-        };
+        for (let i = 0; i <= 100; i++) {
+            const t = i / 100;
+            const point = this.roadCurve.getPoint(t);
+            const zDiff = Math.abs(point.z - z);
+            if (zDiff < minZDiff) {
+                minZDiff = zDiff;
+                closestT = t;
+            }
+        }
         
-        // Danger zones
-        this.dangerZones = {
-            forest: -12,    // X position where forest danger begins
-            cliff: 14       // X position where cliff danger begins
-        };
+        const point = this.roadCurve.getPoint(closestT);
+        const tangent = this.roadCurve.getTangent(closestT);
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+        
+        return { point, tangent, normal, t: closestT };
     }
     
     createGrass() {
-        const grassLength = 200;
+        const grassLength = 280; // Increased to match road
         
         // Left side - Forest floor (darker, more mysterious)
-        const forestFloorGeometry = new THREE.PlaneGeometry(50, grassLength);
+        const forestFloorGeometry = new THREE.PlaneGeometry(60, grassLength);
         const forestFloorMaterial = new THREE.MeshStandardMaterial({
             color: 0x0d260d,
             roughness: 1.0
@@ -145,12 +249,12 @@ export class GameScene {
         
         const forestFloor = new THREE.Mesh(forestFloorGeometry, forestFloorMaterial);
         forestFloor.rotation.x = -Math.PI / 2;
-        forestFloor.position.set(-31, -0.01, 0);
+        forestFloor.position.set(-40, -0.01, 0);
         forestFloor.receiveShadow = true;
         this.scene.add(forestFloor);
         
         // Right side - Cliff edge with rocky texture
-        const cliffEdgeGeometry = new THREE.PlaneGeometry(15, grassLength);
+        const cliffEdgeGeometry = new THREE.PlaneGeometry(20, grassLength);
         const cliffEdgeMaterial = new THREE.MeshStandardMaterial({
             color: 0x3d3d3d,
             roughness: 0.95
@@ -158,7 +262,7 @@ export class GameScene {
         
         const cliffEdge = new THREE.Mesh(cliffEdgeGeometry, cliffEdgeMaterial);
         cliffEdge.rotation.x = -Math.PI / 2;
-        cliffEdge.position.set(13.5, -0.01, 0);
+        cliffEdge.position.set(18, -0.01, 0);
         cliffEdge.receiveShadow = true;
         this.scene.add(cliffEdge);
         
@@ -170,7 +274,7 @@ export class GameScene {
     }
     
     createCliff() {
-        const cliffLength = 200;
+        const cliffLength = 280; // Increased to match road
         
         // Cliff face - vertical wall
         const cliffGeometry = new THREE.PlaneGeometry(cliffLength, 30);
@@ -181,11 +285,11 @@ export class GameScene {
         
         const cliffFace = new THREE.Mesh(cliffGeometry, cliffMaterial);
         cliffFace.rotation.y = -Math.PI / 2;
-        cliffFace.position.set(21, -15, 0);
+        cliffFace.position.set(28, -15, 0);
         this.scene.add(cliffFace);
         
         // Add some rock formations on cliff edge
-        const rockCount = this.isMobile ? 12 : 30;
+        const rockCount = this.isMobile ? 16 : 40;
         for (let i = 0; i < rockCount; i++) {
             const rockGeometry = new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.5, 0);
             const rockMaterial = new THREE.MeshStandardMaterial({
@@ -194,17 +298,17 @@ export class GameScene {
             });
             const rock = new THREE.Mesh(rockGeometry, rockMaterial);
             rock.position.set(
-                18 + Math.random() * 3,
+                22 + Math.random() * 4,
                 0.1,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 260
             );
             rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
             this.scene.add(rock);
         }
         
         // Warning signs along cliff edge
-        for (let z = -80; z <= 80; z += 40) {
-            this.createWarningSign(15, z);
+        for (let z = -120; z <= 120; z += 40) {
+            this.createWarningSign(20, z);
         }
     }
     
@@ -228,8 +332,8 @@ export class GameScene {
     }
     
     createReservoir() {
-        // Water surface
-        const waterGeometry = new THREE.PlaneGeometry(100, 200);
+        // Water surface - larger to match map
+        const waterGeometry = new THREE.PlaneGeometry(120, 280);
         const waterMaterial = new THREE.MeshStandardMaterial({
             color: 0x1a3d5c,
             roughness: 0.1,
@@ -240,23 +344,23 @@ export class GameScene {
         
         const water = new THREE.Mesh(waterGeometry, waterMaterial);
         water.rotation.x = -Math.PI / 2;
-        water.position.set(70, -28, 0);
+        water.position.set(80, -28, 0);
         this.scene.add(water);
         
         // Subtle water glow for visibility
-        const waterLight = new THREE.PointLight(0x1a5a8c, 0.5, 50);
-        waterLight.position.set(40, -20, 0);
+        const waterLight = new THREE.PointLight(0x1a5a8c, 0.5, 60);
+        waterLight.position.set(50, -20, 0);
         this.scene.add(waterLight);
     }
     
     createTrees() {
         const treePositions = [];
         
-        // Generate dense forest on LEFT side only (forest side)
-        const treeCount = this.isMobile ? 70 : 150;
+        // Generate dense forest on LEFT side only (forest side) - larger map
+        const treeCount = this.isMobile ? 90 : 200;
         for (let i = 0; i < treeCount; i++) {
-            const x = -(12 + Math.random() * 40); // Only negative X (left side)
-            const z = (Math.random() - 0.5) * 180;
+            const x = -(15 + Math.random() * 50); // Only negative X (left side)
+            const z = (Math.random() - 0.5) * 260; // Increased range
             treePositions.push({ x, z });
         }
         
@@ -287,7 +391,7 @@ export class GameScene {
         });
         
         // Add some bushes/undergrowth in forest for atmosphere
-        const bushCount = this.isMobile ? 20 : 50;
+        const bushCount = this.isMobile ? 30 : 70;
         for (let i = 0; i < bushCount; i++) {
             const bushGeometry = new THREE.SphereGeometry(0.5 + Math.random() * 0.5, 6, 6);
             const bushMaterial = new THREE.MeshStandardMaterial({
@@ -296,9 +400,9 @@ export class GameScene {
             });
             const bush = new THREE.Mesh(bushGeometry, bushMaterial);
             bush.position.set(
-                -(10 + Math.random() * 15),
+                -(12 + Math.random() * 20),
                 0.3,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 260
             );
             bush.scale.y = 0.6;
             this.scene.add(bush);
@@ -402,8 +506,8 @@ export class GameScene {
     }
     
     createPuddles() {
-        // Random puddles on the road for realism
-        const puddleCount = this.isMobile ? 10 : 20;
+        // Random puddles on the road for realism - larger map
+        const puddleCount = this.isMobile ? 14 : 28;
         for (let i = 0; i < puddleCount; i++) {
             const puddleGeometry = new THREE.CircleGeometry(0.5 + Math.random() * 1, 16);
             const puddleMaterial = new THREE.MeshStandardMaterial({
@@ -419,14 +523,14 @@ export class GameScene {
             puddle.position.set(
                 (Math.random() - 0.5) * 10,
                 0.02,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 260
             );
             puddle.scale.set(1 + Math.random(), 0.6 + Math.random() * 0.4, 1);
             this.scene.add(puddle);
         }
         
         // Some larger puddles near the road edges
-        const edgePuddleCount = this.isMobile ? 4 : 8;
+        const edgePuddleCount = this.isMobile ? 6 : 12;
         for (let i = 0; i < edgePuddleCount; i++) {
             const puddleGeometry = new THREE.CircleGeometry(1.5 + Math.random() * 1.5, 16);
             const puddleMaterial = new THREE.MeshStandardMaterial({
@@ -443,7 +547,7 @@ export class GameScene {
             puddle.position.set(
                 side * (6 + Math.random() * 3),
                 0.02,
-                (Math.random() - 0.5) * 150
+                (Math.random() - 0.5) * 220
             );
             this.scene.add(puddle);
         }
