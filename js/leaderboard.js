@@ -21,8 +21,8 @@ export class LeaderboardManager {
         this.isLoading = true;
         
         try {
-            // Fetch more scores to account for duplicates, then deduplicate
-            const fetchLimit = limit * 3;
+            // Fetch a large batch to ensure we get enough unique players after deduplication
+            const fetchLimit = Math.max(limit * 10, 50);
             const response = await fetch(
                 `${this.supabaseUrl}/rest/v1/${this.tableName}?select=*&order=score.desc&limit=${fetchLimit}`,
                 {
@@ -50,7 +50,7 @@ export class LeaderboardManager {
                 }
             }
             
-            // Convert back to array and sort by score
+            // Convert back to array, sort by score, and take top entries
             const deduplicatedScores = Array.from(playerBestScores.values())
                 .sort((a, b) => b.score - a.score)
                 .slice(0, limit);
