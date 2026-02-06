@@ -1,0 +1,39 @@
+name: Audio smoke tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'js/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+
+jobs:
+  audio-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Start static server
+        run: npx http-server -p 3000 -c-1 &
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:3000 --timeout 10000
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run audio smoke tests (Playwright)
+        run: npm test
+        env:
+          CI: true
