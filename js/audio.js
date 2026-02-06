@@ -35,17 +35,19 @@ export class AudioManager {
         this.isInitialized = true;
     }
     
-    startAmbient() {
+    startAmbient(level = 2) {
         if (!this.isInitialized) return;
         
-        // Rain sound - filtered noise
-        this.createRainSound();
-        
-        // Wind - low frequency filtered noise
+        // Wind - low frequency filtered noise (both levels)
         this.createWindSound();
         
-        // Cricket chirps - randomized oscillators (less frequent in rain)
-        this.startCrickets();
+        // Cricket chirps (more frequent in clear night)
+        this.startCrickets(level === 1);
+        
+        // Rain sound only for level 2
+        if (level === 2) {
+            this.createRainSound();
+        }
     }
     
     createRainSound() {
@@ -164,13 +166,16 @@ export class AudioManager {
         this.ambientNodes.push(windOsc, modOsc);
     }
     
-    startCrickets() {
-        // Random cricket chirps (less frequent due to rain)
+    startCrickets(isClearNight = false) {
+        // Random cricket chirps - more frequent in clear night
+        const chirpChance = isClearNight ? 0.35 : 0.15;
+        const interval = isClearNight ? 400 : 800; // More frequent in clear night
+        
         this.cricketInterval = setInterval(() => {
-            if (Math.random() < 0.15) { // Reduced from 0.3 due to rain
+            if (Math.random() < chirpChance) {
                 this.playCricketChirp();
             }
-        }, 800); // Less frequent
+        }, interval);
     }
     
     playCricketChirp() {
