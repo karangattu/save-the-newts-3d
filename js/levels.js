@@ -525,7 +525,7 @@ export class LevelManager {
     }
     
     createRain() {
-        const rainCount = this.isMobile ? 6000 : 15000;
+        const rainCount = this.isMobile ? 2000 : 5000;
         this.rainGeometry = new THREE.BufferGeometry();
         
         const positions = new Float32Array(rainCount * 3);
@@ -554,7 +554,7 @@ export class LevelManager {
     
     createDustParticles() {
         // Dust/fog particles for construction zone atmosphere
-        const dustCount = this.isMobile ? 1000 : 3000;
+        const dustCount = this.isMobile ? 500 : 1500;
         this.rainGeometry = new THREE.BufferGeometry();
         
         const positions = new Float32Array(dustCount * 3);
@@ -585,8 +585,8 @@ export class LevelManager {
         const moonlight = new THREE.DirectionalLight(0x6666aa, 0.12);
         moonlight.position.set(20, 50, 10);
         moonlight.castShadow = true;
-        moonlight.shadow.mapSize.width = 1024;
-        moonlight.shadow.mapSize.height = 1024;
+        moonlight.shadow.mapSize.width = 512;
+        moonlight.shadow.mapSize.height = 512;
         
         // Configure shadow camera to cover the road area properly
         const d = 150;
