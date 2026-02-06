@@ -9,6 +9,7 @@ export class NewtManager {
 
         this.newts = [];
         this.rescuedCount = 0;
+        this.levelNewtsRescued = 0;
 
         // Spawn settings
         this.baseSpawnInterval = 3; // seconds
@@ -18,6 +19,12 @@ export class NewtManager {
 
         // Rescue settings
         this.rescueDistance = 1.5; // Auto-rescue distance
+
+        // Speed multiplier (for endless mode)
+        this.speedMultiplier = 1;
+
+        // Rescue celebration particles
+        this.rescueEffects = [];
     }
     
     setRoadCurve(roadCurve) {
@@ -27,171 +34,244 @@ export class NewtManager {
     createNewtMesh() {
         const group = new THREE.Group();
 
-        // Materials - California newt colors
-        // Dark reddish-brown top
+        // Materials - California newt (Taricha torosa) accurate colors
+        // Rich chocolate-mahogany brown dorsal, slightly glossy wet skin
         const topMaterial = new THREE.MeshStandardMaterial({
-            color: 0x8B2500,  // Dark reddish-brown
-            roughness: 0.6,
-            metalness: 0.2
+            color: 0x5C1A0A,  // Deep chocolate-mahogany brown
+            roughness: 0.35,
+            metalness: 0.15
         });
 
-        // Bright orange underside
+        // Vivid warm orange ventral/underside and legs
         const orangeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xFF6600,  // Bright orange
-            roughness: 0.5,
+            color: 0xF07020,  // Warm vivid orange
+            roughness: 0.4,
             metalness: 0.1,
-            emissive: 0x331100,
-            emissiveIntensity: 0.2
+            emissive: 0x401000,
+            emissiveIntensity: 0.25
         });
 
-        // Body - elongated shape
-        const bodyGeometry = new THREE.CapsuleGeometry(0.12, 0.5, 8, 16);
+        // Orange-brown transition for side stripe edging
+        const edgeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xC04010,  // Reddish-orange transition
+            roughness: 0.4,
+            metalness: 0.1
+        });
+
+        // === BODY - wider, flatter, more robust ===
+        // Main dorsal body (flattened capsule)
+        const bodyGeometry = new THREE.CapsuleGeometry(0.14, 0.5, 8, 16);
         const body = new THREE.Mesh(bodyGeometry, topMaterial);
         body.rotation.z = Math.PI / 2;
-        body.position.y = 0.12;
+        body.scale.set(1, 0.7, 1.15); // Flattened, wider
+        body.position.y = 0.11;
         body.castShadow = true;
         group.add(body);
 
-        // Orange belly (slightly flattened sphere under body)
-        const bellyGeometry = new THREE.SphereGeometry(0.11, 12, 8);
+        // Orange belly (wide flat underside)
+        const bellyGeometry = new THREE.SphereGeometry(0.13, 12, 8);
         const belly = new THREE.Mesh(bellyGeometry, orangeMaterial);
-        belly.scale.set(2.5, 0.4, 0.9);
-        belly.position.set(0, 0.06, 0);
+        belly.scale.set(2.6, 0.3, 1.1);
+        belly.position.set(0, 0.04, 0);
         group.add(belly);
 
-        // Head - wider, flattened shape like in photo
-        const headGeometry = new THREE.SphereGeometry(0.1, 12, 12);
+        // Orange side-stripes (where brown meets orange on each flank)
+        const sideStripeGeo = new THREE.CapsuleGeometry(0.04, 0.5, 4, 8);
+        const leftStripe = new THREE.Mesh(sideStripeGeo, edgeMaterial);
+        leftStripe.rotation.z = Math.PI / 2;
+        leftStripe.scale.set(1, 0.5, 1);
+        leftStripe.position.set(0, 0.07, 0.12);
+        group.add(leftStripe);
+
+        const rightStripe = new THREE.Mesh(sideStripeGeo, edgeMaterial);
+        rightStripe.rotation.z = Math.PI / 2;
+        rightStripe.scale.set(1, 0.5, 1);
+        rightStripe.position.set(0, 0.07, -0.12);
+        group.add(rightStripe);
+
+        // === HEAD - wide, blunt, toad-like, wider than neck ===
+        const headGeometry = new THREE.SphereGeometry(0.12, 12, 12);
         const head = new THREE.Mesh(headGeometry, topMaterial);
-        head.scale.set(1.3, 0.8, 1.1);
-        head.position.set(0.38, 0.12, 0);
+        head.scale.set(1.2, 0.65, 1.4); // Very wide and flat
+        head.position.set(0.38, 0.1, 0);
         head.castShadow = true;
         group.add(head);
 
-        // Orange chin/throat
-        const chinGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+        // Orange throat/chin - large and prominent
+        const chinGeometry = new THREE.SphereGeometry(0.1, 10, 8);
         const chin = new THREE.Mesh(chinGeometry, orangeMaterial);
-        chin.scale.set(1.2, 0.5, 1);
-        chin.position.set(0.4, 0.06, 0);
+        chin.scale.set(1.1, 0.4, 1.3);
+        chin.position.set(0.4, 0.04, 0);
         group.add(chin);
 
-        // Snout
-        const snoutGeometry = new THREE.SphereGeometry(0.06, 8, 8);
+        // Blunt rounded snout
+        const snoutGeometry = new THREE.SphereGeometry(0.07, 10, 10);
         const snout = new THREE.Mesh(snoutGeometry, topMaterial);
-        snout.scale.set(1.2, 0.7, 0.9);
-        snout.position.set(0.48, 0.11, 0);
+        snout.scale.set(1.0, 0.6, 1.1);
+        snout.position.set(0.5, 0.1, 0);
         group.add(snout);
 
-        // Eyes - distinctive yellow-orange with dark pupils (like photo)
-        const eyeWhiteGeometry = new THREE.SphereGeometry(0.035, 10, 10);
+        // Snout orange underside
+        const snoutBelly = new THREE.Mesh(
+            new THREE.SphereGeometry(0.05, 8, 8),
+            orangeMaterial
+        );
+        snoutBelly.scale.set(1.0, 0.4, 1.0);
+        snoutBelly.position.set(0.5, 0.05, 0);
+        group.add(snoutBelly);
+
+        // Small nostrils
+        const nostrilGeo = new THREE.SphereGeometry(0.012, 6, 6);
+        const nostrilMat = new THREE.MeshStandardMaterial({ color: 0x1a0a05, roughness: 0.8 });
+        const leftNostril = new THREE.Mesh(nostrilGeo, nostrilMat);
+        leftNostril.position.set(0.56, 0.11, 0.03);
+        group.add(leftNostril);
+        const rightNostril = new THREE.Mesh(nostrilGeo, nostrilMat);
+        rightNostril.position.set(0.56, 0.11, -0.03);
+        group.add(rightNostril);
+
+        // === EYES - very prominent, bulging, golden-yellow ===
+        // Eye sockets (slight bump on head)
+        const eyeSocketGeo = new THREE.SphereGeometry(0.04, 10, 10);
+
+        // Left eye assembly
+        const leftSocket = new THREE.Mesh(eyeSocketGeo, topMaterial);
+        leftSocket.scale.set(1.1, 1, 1.1);
+        leftSocket.position.set(0.42, 0.16, 0.09);
+        group.add(leftSocket);
+
+        const eyeGeo = new THREE.SphereGeometry(0.038, 12, 12);
         const eyeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xFFAA00,  // Yellow-orange iris
-            emissive: 0x664400,
-            emissiveIntensity: 0.5,
-            roughness: 0.3,
-            metalness: 0.2
+            color: 0xDDAA20,  // Golden-yellow like photo
+            emissive: 0x886600,
+            emissiveIntensity: 0.6,
+            roughness: 0.15,
+            metalness: 0.3
         });
 
-        const leftEyeWhite = new THREE.Mesh(eyeWhiteGeometry, eyeMaterial);
-        leftEyeWhite.position.set(0.42, 0.17, 0.07);
-        group.add(leftEyeWhite);
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMaterial);
+        leftEye.position.set(0.43, 0.18, 0.095);
+        group.add(leftEye);
 
-        const rightEyeWhite = new THREE.Mesh(eyeWhiteGeometry, eyeMaterial);
-        rightEyeWhite.position.set(0.42, 0.17, -0.07);
-        group.add(rightEyeWhite);
+        const rightSocket = new THREE.Mesh(eyeSocketGeo, topMaterial);
+        rightSocket.scale.set(1.1, 1, 1.1);
+        rightSocket.position.set(0.42, 0.16, -0.09);
+        group.add(rightSocket);
 
-        // Pupils - dark
-        const pupilGeometry = new THREE.SphereGeometry(0.015, 8, 8);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMaterial);
+        rightEye.position.set(0.43, 0.18, -0.095);
+        group.add(rightEye);
+
+        // Large round pupils
+        const pupilGeo = new THREE.SphereGeometry(0.02, 10, 10);
         const pupilMaterial = new THREE.MeshStandardMaterial({
-            color: 0x000000,
-            roughness: 0.1,
-            metalness: 0.5
+            color: 0x050505,
+            roughness: 0.05,
+            metalness: 0.6
         });
 
-        const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        leftPupil.position.set(0.45, 0.17, 0.075);
+        const leftPupil = new THREE.Mesh(pupilGeo, pupilMaterial);
+        leftPupil.position.set(0.46, 0.185, 0.1);
         group.add(leftPupil);
 
-        const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        rightPupil.position.set(0.45, 0.17, -0.075);
+        const rightPupil = new THREE.Mesh(pupilGeo, pupilMaterial);
+        rightPupil.position.set(0.46, 0.185, -0.1);
         group.add(rightPupil);
 
-        // Tail - curved like in photo
-        const tailSegments = 6;
+        // === TAIL - thick at base, tapers, curls, with orange underside ===
+        const tailSegments = 8;
         let tailX = -0.3;
-        let tailY = 0.1;
-        let tailRadius = 0.07;
+        let tailY = 0.09;
+        let tailZ = 0;
+        let tailRadius = 0.09; // Thicker base
 
         for (let i = 0; i < tailSegments; i++) {
-            const segGeometry = new THREE.SphereGeometry(tailRadius, 8, 8);
-            const tailSeg = new THREE.Mesh(segGeometry, topMaterial);
-            tailSeg.scale.set(1.5, 0.8, 0.8);
-            tailSeg.position.set(tailX, tailY, 0);
+            const t = i / (tailSegments - 1);
+            // Dorsal (top) part
+            const segGeo = new THREE.SphereGeometry(tailRadius, 8, 8);
+            const tailSeg = new THREE.Mesh(segGeo, topMaterial);
+            tailSeg.scale.set(1.4, 0.65, 0.85);
+            tailSeg.position.set(tailX, tailY, tailZ);
             tailSeg.castShadow = true;
             group.add(tailSeg);
 
-            // Curve the tail slightly
-            tailX -= 0.08;
-            tailY -= 0.01;
-            tailRadius *= 0.75;
+            // Orange underside of tail
+            if (tailRadius > 0.03) {
+                const underGeo = new THREE.SphereGeometry(tailRadius * 0.7, 6, 6);
+                const underSeg = new THREE.Mesh(underGeo, edgeMaterial);
+                underSeg.scale.set(1.2, 0.4, 0.8);
+                underSeg.position.set(tailX, tailY - tailRadius * 0.3, tailZ);
+                group.add(underSeg);
+            }
+
+            // Curve the tail with a slight S-curve like in photo
+            tailX -= 0.07;
+            tailY -= 0.005;
+            tailZ += Math.sin(t * Math.PI * 0.8) * 0.015; // slight lateral curve
+            tailRadius *= 0.78;
         }
 
-        // Legs with feet - bright orange like in photo
-        const createLeg = (x, z, isBack, side) => {
+        // === LEGS - thicker, more splayed, with longer distinct toes ===
+        const createLeg = (attachX, attachZ, isBack, side) => {
             const legGroup = new THREE.Group();
 
-            // Upper leg
-            const upperLegGeometry = new THREE.CapsuleGeometry(0.025, 0.08, 4, 8);
-            const upperLeg = new THREE.Mesh(upperLegGeometry, orangeMaterial);
-            upperLeg.rotation.x = side * 0.8;
-            upperLeg.rotation.z = isBack ? 0.3 : -0.3;
-            upperLeg.position.set(0, 0, side * 0.04);
-            legGroup.add(upperLeg);
+            // Upper limb - thicker
+            const upperGeo = new THREE.CapsuleGeometry(0.032, 0.09, 4, 8);
+            const upper = new THREE.Mesh(upperGeo, orangeMaterial);
+            upper.rotation.x = side * 0.9;
+            upper.rotation.z = isBack ? 0.35 : -0.35;
+            upper.position.set(0, -0.01, side * 0.05);
+            legGroup.add(upper);
 
-            // Lower leg
-            const lowerLegGeometry = new THREE.CapsuleGeometry(0.02, 0.06, 4, 8);
-            const lowerLeg = new THREE.Mesh(lowerLegGeometry, orangeMaterial);
-            lowerLeg.position.set(isBack ? 0.02 : -0.02, -0.04, side * 0.1);
-            legGroup.add(lowerLeg);
+            // Lower limb
+            const lowerGeo = new THREE.CapsuleGeometry(0.025, 0.07, 4, 8);
+            const lower = new THREE.Mesh(lowerGeo, orangeMaterial);
+            lower.rotation.x = side * 0.3;
+            lower.position.set(isBack ? 0.02 : -0.02, -0.05, side * 0.11);
+            legGroup.add(lower);
 
-            // Foot with toes
-            const footGeometry = new THREE.SphereGeometry(0.025, 8, 8);
-            const foot = new THREE.Mesh(footGeometry, orangeMaterial);
-            foot.scale.set(1.5, 0.4, 1.2);
-            foot.position.set(isBack ? 0.03 : -0.03, -0.06, side * 0.13);
-            legGroup.add(foot);
+            // Palm/foot pad
+            const padGeo = new THREE.SphereGeometry(0.028, 8, 8);
+            const pad = new THREE.Mesh(padGeo, orangeMaterial);
+            pad.scale.set(1.4, 0.35, 1.3);
+            pad.position.set(isBack ? 0.03 : -0.03, -0.07, side * 0.14);
+            legGroup.add(pad);
 
-            // Toes (4 small elongated spheres)
-            for (let t = 0; t < 4; t++) {
-                const toeGeometry = new THREE.CapsuleGeometry(0.008, 0.025, 4, 6);
-                const toe = new THREE.Mesh(toeGeometry, orangeMaterial);
-                const toeAngle = (t - 1.5) * 0.25;
-                toe.rotation.z = isBack ? 0.5 : -0.5;
+            // Toes - 4 front, 5 back (accurate to California newt)
+            const toeCount = isBack ? 5 : 4;
+            for (let t = 0; t < toeCount; t++) {
+                const toeLen = 0.025 + (isBack ? 0.008 : 0.005);
+                const toeGeo = new THREE.CapsuleGeometry(0.009, toeLen, 4, 6);
+                const toe = new THREE.Mesh(toeGeo, orangeMaterial);
+                const spread = toeCount === 5 ? (t - 2) : (t - 1.5);
+                const toeAngle = spread * 0.3;
+                toe.rotation.z = isBack ? 0.4 : -0.4;
                 toe.rotation.y = toeAngle;
                 toe.position.set(
-                    (isBack ? 0.05 : -0.05) + Math.sin(toeAngle) * 0.02,
-                    -0.065,
-                    side * 0.13 + (t - 1.5) * 0.015
+                    (isBack ? 0.055 : -0.055) + Math.sin(toeAngle) * 0.015,
+                    -0.075,
+                    side * 0.14 + spread * 0.016
                 );
                 legGroup.add(toe);
             }
 
-            legGroup.position.set(x, 0.1, z);
+            legGroup.position.set(attachX, 0.1, attachZ);
             return legGroup;
         };
 
-        // Front legs (positioned forward, splayed out like in photo)
-        const frontRightLeg = createLeg(0.2, 0.08, false, 1);
-        const frontLeftLeg = createLeg(0.2, -0.08, false, -1);
+        // Front legs - splayed forward and outward
+        const frontRightLeg = createLeg(0.22, 0.1, false, 1);
+        const frontLeftLeg = createLeg(0.22, -0.1, false, -1);
         group.add(frontRightLeg);
         group.add(frontLeftLeg);
 
-        // Back legs (positioned back)
-        const backRightLeg = createLeg(-0.15, 0.08, true, 1);
-        const backLeftLeg = createLeg(-0.15, -0.08, true, -1);
+        // Back legs - splayed backward and outward
+        const backRightLeg = createLeg(-0.17, 0.1, true, 1);
+        const backLeftLeg = createLeg(-0.17, -0.1, true, -1);
         group.add(backRightLeg);
         group.add(backLeftLeg);
 
-        // Scale up the whole newt a bit
+        // Scale up the whole newt
         group.scale.set(1.2, 1.2, 1.2);
 
         // Store leg references for animation
@@ -247,7 +327,7 @@ export class NewtManager {
             startPosition: startPosition.clone(),
             targetPosition: targetPosition.clone(),
             roadNormal: roadNormal.clone(),
-            speed: 0.3 + Math.random() * 0.4, // Slower, more realistic speed (0.3-0.7)
+            speed: (0.3 + Math.random() * 0.4) * this.speedMultiplier, // Slower, more realistic speed (0.3-0.7)
             isIlluminated: false,
             illuminationTime: 0,
             walkCycle: Math.random() * Math.PI * 2, // Random start phase for variety
@@ -401,10 +481,99 @@ export class NewtManager {
 
         }
 
+        // Update rescue celebration particles
+        this.updateRescueEffects(deltaTime);
+
         return rescuedNewts;
     }
 
+    setSpeedMultiplier(mult) {
+        this.speedMultiplier = mult;
+    }
 
+    createRescueEffect(position) {
+        // Pool max 5 effects (reuse oldest)
+        if (this.rescueEffects.length >= 5) {
+            const oldest = this.rescueEffects.shift();
+            this.scene.remove(oldest.points);
+            oldest.geometry.dispose();
+        }
+
+        const count = 20;
+        const positions = new Float32Array(count * 3);
+        const velocities = [];
+
+        for (let i = 0; i < count; i++) {
+            positions[i * 3] = position.x;
+            positions[i * 3 + 1] = position.y + 0.2;
+            positions[i * 3 + 2] = position.z;
+
+            // Random velocities: hemisphere (upward bias + outward spread)
+            velocities.push(
+                (Math.random() - 0.5) * 3,  // x
+                2 + Math.random() * 4,        // y (upward)
+                (Math.random() - 0.5) * 3     // z
+            );
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({
+            color: 0x44ff88,
+            size: 0.15,
+            transparent: true,
+            opacity: 1.0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const points = new THREE.Points(geometry, material);
+        this.scene.add(points);
+
+        this.rescueEffects.push({
+            points,
+            geometry,
+            material,
+            velocities,
+            life: 0,
+            maxLife: 1.0
+        });
+    }
+
+    updateRescueEffects(deltaTime) {
+        for (let i = this.rescueEffects.length - 1; i >= 0; i--) {
+            const effect = this.rescueEffects[i];
+            effect.life += deltaTime;
+
+            if (effect.life >= effect.maxLife) {
+                this.scene.remove(effect.points);
+                effect.geometry.dispose();
+                effect.material.dispose();
+                this.rescueEffects.splice(i, 1);
+                continue;
+            }
+
+            const positions = effect.geometry.attributes.position.array;
+            const count = positions.length / 3;
+
+            for (let j = 0; j < count; j++) {
+                const vi = j * 3;
+                // Apply velocity
+                positions[vi] += effect.velocities[vi] * deltaTime;
+                positions[vi + 1] += effect.velocities[vi + 1] * deltaTime;
+                positions[vi + 2] += effect.velocities[vi + 2] * deltaTime;
+
+                // Apply gravity
+                effect.velocities[vi + 1] -= 6 * deltaTime;
+            }
+
+            effect.geometry.attributes.position.needsUpdate = true;
+
+            // Fade opacity
+            effect.material.opacity = 1.0 - (effect.life / effect.maxLife);
+        }
+    }
 
     getRescuedCount() {
         return this.rescuedCount;
@@ -456,5 +625,13 @@ export class NewtManager {
         this.newts = [];
         this.rescuedCount = 0;
         this.spawnTimer = 0;
+
+        // Clean up rescue effects
+        this.rescueEffects.forEach(effect => {
+            this.scene.remove(effect.points);
+            effect.geometry.dispose();
+            effect.material.dispose();
+        });
+        this.rescueEffects = [];
     }
 }

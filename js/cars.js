@@ -17,29 +17,91 @@ export class CarManager {
         this.roadCurve = roadCurve;
         
         this.cars = [];
-        
+
         // Spawn settings
         this.baseSpawnInterval = 4; // seconds
         this.spawnTimer = 0;
         this.roadWidth = 12;
         this.roadLength = 280; // Increased from 200
-        
+
         // Stealth car settings
         this.baseStealthChance = 0.1; // 10% base chance
         this.stealthChanceIncrease = 0.05; // increases after 2 minutes
-        
+
         // Near-miss tracking
         this.lastNearMiss = 0;
         this.nearMissCooldown = 0.5; // seconds between near-miss triggers
-        
+
         // Callback for newt crush events
         this.onNewtCrushed = null;
+
+        // Difficulty multiplier (for endless mode)
+        this.difficultyMultiplier = 1;
+
+        // Car object pool: vehicleType -> { meshes: [...], available: [...] }
+        this.carPool = new Map();
+        this.initPool();
     }
     
     setRoadCurve(roadCurve) {
         this.roadCurve = roadCurve;
     }
-    
+
+    setDifficultyMultiplier(mult) {
+        this.difficultyMultiplier = mult;
+    }
+
+    initPool() {
+        const types = Object.values(VEHICLE_TYPES);
+        for (const type of types) {
+            const pool = { meshes: [], available: [] };
+            for (let i = 0; i < 3; i++) {
+                const mesh = this.createVehicleMesh(false, type);
+                mesh.visible = false;
+                this.scene.add(mesh);
+                pool.meshes.push(mesh);
+                pool.available.push(mesh);
+            }
+            // Also pre-create 1 stealth variant per type
+            const stealthMesh = this.createVehicleMesh(true, type);
+            stealthMesh.visible = false;
+            stealthMesh.userData.isStealth = true;
+            this.scene.add(stealthMesh);
+            pool.meshes.push(stealthMesh);
+            pool.available.push(stealthMesh);
+            this.carPool.set(type, pool);
+        }
+    }
+
+    acquireFromPool(vehicleType, isStealth) {
+        const pool = this.carPool.get(vehicleType);
+        if (pool) {
+            // Try to find a matching mesh (stealth or not)
+            const idx = pool.available.findIndex(m => !!m.userData.isStealth === isStealth);
+            if (idx !== -1) {
+                const mesh = pool.available.splice(idx, 1)[0];
+                mesh.visible = true;
+                return mesh;
+            }
+        }
+        // Fallback: create new mesh and add to pool
+        const mesh = this.createVehicleMesh(isStealth, vehicleType);
+        if (isStealth) mesh.userData.isStealth = true;
+        this.scene.add(mesh);
+        if (pool) pool.meshes.push(mesh);
+        return mesh;
+    }
+
+    releaseToPool(car) {
+        car.mesh.visible = false;
+        const pool = this.carPool.get(car.vehicleType);
+        if (pool) {
+            pool.available.push(car.mesh);
+        } else {
+            this.scene.remove(car.mesh);
+        }
+    }
+
     getRandomVehicleType() {
         const rand = Math.random();
         if (rand < 0.30) return VEHICLE_TYPES.CAR;
@@ -536,11 +598,12 @@ export class CarManager {
         if (elapsedMinutes > 2) {
             stealthChance += (elapsedMinutes - 2) * this.stealthChanceIncrease;
         }
+        stealthChance *= this.difficultyMultiplier;
         const isStealth = Math.random() < stealthChance;
-        
+
         // Get random vehicle type
         const vehicleType = this.getRandomVehicleType();
-        const mesh = this.createVehicleMesh(isStealth, vehicleType);
+        const mesh = this.acquireFromPool(vehicleType, isStealth);
         
         // Random lane (-3 or 3 for two-lane road)
         const lane = Math.random() > 0.5 ? 3 : -3;
@@ -573,12 +636,10 @@ export class CarManager {
         const finalPosition = startPoint.clone().add(laneOffset);
         
         mesh.position.copy(finalPosition);
-        
+
         // Rotate car to face direction of travel
         const angle = Math.atan2(startTangent.x, startTangent.z);
         mesh.rotation.y = angle + (direction > 0 ? 0 : Math.PI);
-        
-        this.scene.add(mesh);
         
         // Speed varies by vehicle type
         let baseSpeed = 8;
@@ -604,7 +665,7 @@ export class CarManager {
     update(deltaTime, elapsedTime) {
         // Update spawn rate based on elapsed time
         const elapsedMinutes = elapsedTime / 60;
-        const spawnInterval = this.baseSpawnInterval / (1 + elapsedMinutes * 0.15);
+        const spawnInterval = this.baseSpawnInterval / ((1 + elapsedMinutes * 0.15) * this.difficultyMultiplier);
         
         // Spawn timer
         this.spawnTimer += deltaTime;
@@ -632,7 +693,7 @@ export class CarManager {
                 
                 // Check if car reached end of road
                 if (car.curveT > 1 || car.curveT < 0) {
-                    this.scene.remove(car.mesh);
+                    this.releaseToPool(car);
                     this.cars.splice(i, 1);
                     continue;
                 }
@@ -667,7 +728,7 @@ export class CarManager {
                 // Remove if off-screen
                 const removeZ = this.roadLength / 2 + 20;
                 if (car.mesh.position.z > removeZ || car.mesh.position.z < -removeZ) {
-                    this.scene.remove(car.mesh);
+                    this.releaseToPool(car);
                     this.cars.splice(i, 1);
                 }
             }
@@ -767,9 +828,9 @@ export class CarManager {
     }
     
     reset() {
-        // Remove all cars
+        // Return all active cars to pool
         this.cars.forEach(car => {
-            this.scene.remove(car.mesh);
+            this.releaseToPool(car);
         });
         this.cars = [];
         this.spawnTimer = 0;

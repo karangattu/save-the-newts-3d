@@ -254,6 +254,12 @@ class Game {
         this.currentLevel = 1;
         this.levelScore = 0;
         this.totalScore = 0;
+        this.newtsForNextLevel = 3;
+
+        // Reset endless mode multipliers
+        this.carManager.setDifficultyMultiplier(1);
+        this.newtManager.setSpeedMultiplier(1);
+        this.flashlight.setExternalDrainMultiplier(1);
 
         // Reload level 1
         const levelData = this.levelManager.loadLevel(1);
@@ -275,6 +281,37 @@ class Game {
         this.state = 'loading';
         this.currentLevel++;
 
+        // Add to total score
+        this.totalScore += this.levelScore;
+        this.levelScore = 0;
+
+        // Endless mode: after level 2, continue on same scene with escalating difficulty
+        if (this.currentLevel > 2) {
+            const wave = this.currentLevel - 2;
+            this.newtsForNextLevel = 3 + wave * 2;
+            this.carManager.setDifficultyMultiplier(1 + wave * 0.15);
+            this.newtManager.setSpeedMultiplier(1 + wave * 0.1);
+            this.flashlight.setExternalDrainMultiplier(1 + wave * 0.1);
+
+            this.newtManager.reset();
+            this.carManager.reset();
+
+            // Reset car engine sounds
+            this.carEngineSounds.forEach((sound) => {
+                this.audioManager.stopCarEngine(sound);
+            });
+            this.carEngineSounds.clear();
+
+            // Update UI
+            this.ui.updateLevel(this.currentLevel);
+            this.ui.updateScore(this.totalScore);
+            this.ui.showLevelStartMessage(this.currentLevel);
+
+            this.state = 'playing';
+            return;
+        }
+
+        // Normal level transition (level 1 -> 2)
         // Show loading screen
         this.ui.showLoadingScreen(`Loading Level ${this.currentLevel}...`);
 
@@ -310,10 +347,6 @@ class Game {
 
         // Clear predator
         this.predatorManager.reset();
-
-        // Add to total score
-        this.totalScore += this.levelScore;
-        this.levelScore = 0;
 
         // Small delay before starting
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -417,7 +450,7 @@ class Game {
 
         // Handle auto-rescued newts
         if (rescuedNewts && rescuedNewts.length > 0) {
-            rescuedNewts.forEach(() => {
+            rescuedNewts.forEach((newt) => {
                 this.audioManager.playRescueSound();
                 this.ui.hapticSuccess();
                 this.ui.showRescueFeedback();
@@ -425,6 +458,12 @@ class Game {
                 // Recharge battery on rescue
                 this.flashlight.recharge(8); // +8% battery per newt
                 this.ui.showBatteryBoost();
+
+                // Rescue celebration particles
+                if (newt.mesh) {
+                    this.newtManager.createRescueEffect(newt.mesh.position);
+                }
+                this.flashlight.pulseOnRescue();
             });
 
             // Update score
@@ -434,7 +473,7 @@ class Game {
             this.ui.updateBattery(this.flashlight.getBattery());
 
             // Check for level progression
-            if (this.levelScore >= this.newtsForNextLevel && this.currentLevel === 1) {
+            if (this.levelScore >= this.newtsForNextLevel) {
                 this.loadNextLevel();
                 return;
             }

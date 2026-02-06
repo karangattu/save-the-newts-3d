@@ -20,7 +20,13 @@ export class Flashlight {
         
         // Toggle state
         this.isOn = true;
-        
+
+        // External difficulty drain multiplier (for endless mode)
+        this.externalDrainMultiplier = 1;
+
+        // Rescue pulse
+        this.rescuePulseTimer = 0;
+
         this.init();
     }
     
@@ -64,7 +70,7 @@ export class Flashlight {
         
         // Only drain battery if flashlight is on
         if (this.isOn && this.battery > 0) {
-            this.battery -= this.baseDrainRate * this.drainMultiplier * deltaTime;
+            this.battery -= this.baseDrainRate * this.drainMultiplier * this.externalDrainMultiplier * deltaTime;
             this.battery = Math.max(0, this.battery);
         }
         
@@ -96,6 +102,17 @@ export class Flashlight {
             }
         }
         
+        // Rescue pulse: briefly brighten then lerp back
+        if (this.rescuePulseTimer > 0) {
+            this.rescuePulseTimer -= deltaTime;
+            if (this.rescuePulseTimer <= 0) {
+                this.rescuePulseTimer = 0;
+            } else {
+                // Override intensity with pulse
+                intensity = Math.max(intensity, this.maxIntensity * (1 + 0.5 * (this.rescuePulseTimer / 0.2)));
+            }
+        }
+
         this.spotlight.intensity = intensity;
         this.fillLight.intensity = this.isOn && this.battery > 0 ? (this.battery / 100) * 0.8 : 0;
     }
@@ -159,12 +176,21 @@ export class Flashlight {
         return true;
     }
     
+    setExternalDrainMultiplier(mult) {
+        this.externalDrainMultiplier = mult;
+    }
+
+    pulseOnRescue() {
+        this.rescuePulseTimer = 0.2;
+    }
+
     reset() {
         this.battery = 100;
         this.drainMultiplier = 1;
         this.isFlickering = false;
         this.flickerTimer = 0;
         this.isOn = true; // Reset to on
+        this.rescuePulseTimer = 0;
         this.spotlight.intensity = this.maxIntensity;
         this.fillLight.intensity = 0.8;
     }

@@ -459,33 +459,46 @@ export class LevelManager {
     }
     
     createTrees(count, side) {
-        const treeCount = this.isMobile ? Math.floor(count * 0.5) : count;
-        
-        for (let i = 0; i < treeCount; i++) {
-            // Spawn trees further from road edge (20-55 instead of 15-50)
+        if (this.isMobile) count = Math.floor(count * 0.5);
+
+        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6); // unit height, scale per instance
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 });
+        const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
+
+        const foliageGeo = new THREE.ConeGeometry(1, 1, 8); // unit size, scale per instance
+        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a, roughness: 1 });
+        const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
+
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+
+        for (let i = 0; i < count; i++) {
             const x = side * (20 + Math.random() * 35);
             const z = (Math.random() - 0.5) * 260;
             const height = 5 + Math.random() * 10;
+            const trunkH = height * 0.4;
             const radius = 2 + Math.random() * 3;
-            
-            // Trunk
-            const trunk = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.3, 0.5, height * 0.4, 6),
-                new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 })
-            );
-            trunk.position.set(x, height * 0.2, z);
-            this.scene.add(trunk);
-            this.levelObjects.push(trunk);
-            
-            // Foliage
-            const foliage = new THREE.Mesh(
-                new THREE.ConeGeometry(radius, height * 0.7, 8),
-                new THREE.MeshStandardMaterial({ color: 0x0a1a0a, roughness: 1 })
-            );
-            foliage.position.set(x, height * 0.4 + height * 0.35, z);
-            this.scene.add(foliage);
-            this.levelObjects.push(foliage);
+
+            // Trunk: positioned at center of trunk, scaled to trunk height
+            position.set(x, trunkH / 2, z);
+            quaternion.identity();
+            scale.set(1, trunkH, 1);
+            matrix.compose(position, quaternion, scale);
+            trunkMesh.setMatrixAt(i, matrix);
+
+            // Foliage: positioned above trunk, scaled to foliage dimensions
+            position.set(x, trunkH + (height * 0.35), z);
+            scale.set(radius, height * 0.7, radius);
+            matrix.compose(position, quaternion, scale);
+            foliageMesh.setMatrixAt(i, matrix);
         }
+
+        trunkMesh.instanceMatrix.needsUpdate = true;
+        foliageMesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(trunkMesh, foliageMesh);
+        this.levelObjects.push(trunkMesh, foliageMesh);
     }
     
     createWarningSign(x, z) {

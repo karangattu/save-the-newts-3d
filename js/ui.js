@@ -251,7 +251,11 @@ export class UIManager {
 
     updateLevel(level) {
         if (this.levelNumberElement) {
-            this.levelNumberElement.textContent = level;
+            if (level > 2) {
+                this.levelNumberElement.textContent = `Wave ${level - 2}`;
+            } else {
+                this.levelNumberElement.textContent = level;
+            }
         }
     }
 
@@ -262,17 +266,25 @@ export class UIManager {
         let levelName = '';
         let levelDescription = '';
         
+        let badge = '';
         if (level === 1) {
             levelName = 'Clear Night';
             levelDescription = 'Watch out for the cliff and forest predators!';
+            badge = 'LEVEL 1';
         } else if (level === 2) {
             levelName = 'Rainy Road';
             levelDescription = 'Same dangers, different curves, now with rain!';
+            badge = 'LEVEL 2';
+        } else {
+            const wave = level - 2;
+            levelName = 'Endless';
+            levelDescription = `Wave ${wave} - More newts needed, faster traffic, quicker drain!`;
+            badge = `WAVE ${wave}`;
         }
-        
+
         message.innerHTML = `
             <div class="level-start-content">
-                <div class="level-badge">LEVEL ${level}</div>
+                <div class="level-badge">${badge}</div>
                 <h2>${levelName}</h2>
                 <p>${levelDescription}</p>
             </div>
