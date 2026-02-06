@@ -22,6 +22,18 @@ body {
     color: #ffd700;
 }
 
+.flashlight-icon {
+    vertical-align: middle;
+    margin-right: 8px;
+    animation: flashlightFadeIn 2s ease-in-out;
+    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6));
+}
+
+@keyframes flashlightFadeIn {
+    0% { opacity: 0; transform: translateX(-10px); filter: drop-shadow(0 0 0px rgba(255, 215, 0, 0)); }
+    100% { opacity: 1; transform: translateX(0); filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6)); }
+}
+
 .instructions li .fas {
     width: 20px;
     text-align: center;
