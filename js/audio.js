@@ -37,13 +37,15 @@ export class AudioManager {
     
     startAmbient(level = 2) {
         if (!this.isInitialized) return;
-        
+        // Debug: report which ambient is starting (helps QA)
+        console.log("AudioManager.startAmbient() - level:", level);
+
         // Wind - low frequency filtered noise (both levels)
         this.createWindSound();
-        
+
         // Cricket chirps (more frequent in clear night)
         this.startCrickets(level === 1);
-        
+
         // Rain sound only for level 2
         if (level === 2) {
             this.createRainSound();

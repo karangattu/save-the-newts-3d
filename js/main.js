@@ -176,7 +176,7 @@ class Game {
                 this.audioManager.stopAmbient();
                 this.audioManager.stopLowBatteryWarning();
             } else if (this.state === 'playing') {
-                this.audioManager.startAmbient();
+                this.audioManager.startAmbient(this.currentLevel);
             }
         });
     }
@@ -232,8 +232,8 @@ class Game {
         // Haptic feedback for game start
         this.ui.hapticMedium();
 
-        // Start ambient sounds
-        this.audioManager.startAmbient();
+        // Start ambient sounds for the current level (crickets in level 1, rain in level 2)
+        this.audioManager.startAmbient(this.currentLevel);
 
         // Lock pointer (desktop only) - this MUST happen within user gesture
         if (!this.isMobile) {
@@ -359,8 +359,8 @@ class Game {
         this.ui.updateScore(this.totalScore);
         this.ui.showLevelStartMessage(this.currentLevel);
 
-        // Resume ambient audio
-        this.audioManager.startAmbient();
+        // Resume ambient audio for the active level
+        this.audioManager.startAmbient(this.currentLevel);
 
         // Set state back to playing
         this.state = 'playing';
