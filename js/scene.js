@@ -1,8 +1,59 @@
 // scene.js - Three.js scene setup with road, environment, and camera shake
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// Shared materials (created once, reused everywhere)
+const SHARED_MATERIALS = {
+    road: null,
+    roadLine: null,
+    roadDash: null,
+    metal: null,
+    wood: null,
+    rock: null,
+    darkGreen: null,
+    trunk: null,
+    foliage: null,
+    bush: null
+};
+
+function initSharedMaterials() {
+    if (SHARED_MATERIALS.road) return; // Already initialized
+    
+    SHARED_MATERIALS.road = new THREE.MeshStandardMaterial({
+        color: 0x1a1a1a, roughness: 0.3, metalness: 0.4
+    });
+    SHARED_MATERIALS.roadLine = new THREE.MeshStandardMaterial({
+        color: 0xffffff, roughness: 0.5
+    });
+    SHARED_MATERIALS.roadDash = new THREE.MeshStandardMaterial({
+        color: 0xffcc00, roughness: 0.5
+    });
+    SHARED_MATERIALS.metal = new THREE.MeshStandardMaterial({
+        color: 0x666666, metalness: 0.6, roughness: 0.4
+    });
+    SHARED_MATERIALS.wood = new THREE.MeshStandardMaterial({
+        color: 0x4a3526, roughness: 0.9
+    });
+    SHARED_MATERIALS.rock = new THREE.MeshStandardMaterial({
+        color: 0x555555, roughness: 0.9
+    });
+    SHARED_MATERIALS.darkGreen = new THREE.MeshStandardMaterial({
+        color: 0x333333, roughness: 0.8
+    });
+    SHARED_MATERIALS.trunk = new THREE.MeshStandardMaterial({
+        color: 0x1a1510, roughness: 1
+    });
+    SHARED_MATERIALS.foliage = new THREE.MeshStandardMaterial({
+        color: 0x0a1a0a, roughness: 1
+    });
+    SHARED_MATERIALS.bush = new THREE.MeshStandardMaterial({
+        color: 0x0d1a0d, roughness: 1
+    });
+}
 
 export class GameScene {
     constructor(isMobile = false) {
+        initSharedMaterials();
         this.scene = new THREE.Scene();
         this.camera = null;
         this.renderer = null;
@@ -13,9 +64,10 @@ export class GameScene {
         // Splash particles
         this.splashParticles = [];
         this.splashPool = [];
-        this.maxSplashes = isMobile ? 30 : 60;
+        this.maxSplashes = isMobile ? 8 : 15;  // Further reduced for performance
         this.rainUpdateAccumulator = 0;
         this.splashUpdateAccumulator = 0;
+        this.updateFrameCounter = 0;  // Throttle updates
         
         this.init();
     }
@@ -31,25 +83,27 @@ export class GameScene {
         this.camera.position.set(0, 1.7, 0);
         
         // Create renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: !this.isMobile,
+            powerPreference: 'high-performance'
+        });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         const maxPixelRatio = this.isMobile ? 1.5 : 2;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
-        this.renderer.shadowMap.enabled = !this.isMobile;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.enabled = false;  // Disabled for performance
         
         // Dark rainy night sky
         this.scene.background = new THREE.Color(0x030308);
         
-        // Add fog for atmosphere and limiting visibility (denser for rain)
-        this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.06 : 0.05);
+        // Add fog for atmosphere (reduced density for performance)
+        this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.04 : 0.03);
         
         // Create environment
         this.createRoad();
         this.createGrass();
         this.createTrees();
         this.createStars();
-        this.createRain();
+        // Rain removed for performance
         this.createPuddles();
         this.createMoonlight();
         
@@ -65,60 +119,17 @@ export class GameScene {
     }
     
     createRoad() {
-        // Road dimensions
+        // Road dimensions - MUCH LONGER for exploration
         const roadWidth = 12;
-        const roadLength = 200;
+        const roadLength = 600;  // 3x longer for exploration
         
-        // Main road surface - wet asphalt with reflections
-        const roadGeometry = new THREE.PlaneGeometry(roadWidth, roadLength);
-        const roadMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a1a,
-            roughness: 0.3, // Lower roughness for wet reflective look
-            metalness: 0.4, // Higher metalness for reflections
-            envMapIntensity: 0.8
-        });
-        const road = new THREE.Mesh(roadGeometry, roadMaterial);
-        road.rotation.x = -Math.PI / 2;
-        road.position.y = 0;
-        road.receiveShadow = true;
-        this.scene.add(road);
-        this.roadMesh = road; // Store reference for effects
+        // Create curved road using multiple segments
+        this.createCurvedRoad(roadWidth, roadLength);
         
-        // Road edge lines (white)
-        const lineGeometry = new THREE.PlaneGeometry(0.3, roadLength);
-        const lineMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.5
-        });
+        // Add interesting roadside objects
+        this.createRoadsideObjects(roadLength);
         
-        const leftLine = new THREE.Mesh(lineGeometry, lineMaterial);
-        leftLine.rotation.x = -Math.PI / 2;
-        leftLine.position.set(-roadWidth/2 + 0.5, 0.01, 0);
-        this.scene.add(leftLine);
-        
-        const rightLine = new THREE.Mesh(lineGeometry, lineMaterial);
-        rightLine.rotation.x = -Math.PI / 2;
-        rightLine.position.set(roadWidth/2 - 0.5, 0.01, 0);
-        this.scene.add(rightLine);
-        
-        // Center dashed lines (yellow)
-        const dashMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffcc00,
-            roughness: 0.5
-        });
-        
-        for (let z = -roadLength/2; z < roadLength/2; z += 6) {
-            const dash = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.2, 3),
-                dashMaterial
-            );
-            dash.rotation.x = -Math.PI / 2;
-            dash.position.set(0, 0.01, z);
-            this.scene.add(dash);
-        }
-        
-        // Store road bounds for player movement
-        // Extended bounds to allow entering danger zones
+        // Store road bounds for player movement - extended for longer map
         this.roadBounds = {
             minX: -25,  // Deep into forest (danger zone starts at -15)
             maxX: 20,   // Over the cliff edge (danger zone starts at 12)
@@ -133,8 +144,436 @@ export class GameScene {
         };
     }
     
+    createCurvedRoad(roadWidth, roadLength) {
+        // OPTIMIZED: Merge all road segments into single geometries
+        const segmentLength = 50;  // Larger segments, fewer objects
+        const numSegments = Math.ceil(roadLength / segmentLength);
+        
+        const roadGeometries = [];
+        const leftLineGeometries = [];
+        const rightLineGeometries = [];
+        
+        // Collect all geometries
+        for (let i = 0; i < numSegments; i++) {
+            const z = -roadLength/2 + i * segmentLength + segmentLength/2;
+            
+            // Main road segment
+            const roadGeometry = new THREE.PlaneGeometry(roadWidth, segmentLength + 0.5);
+            roadGeometry.rotateX(-Math.PI / 2);
+            roadGeometry.translate(0, 0, z);
+            roadGeometries.push(roadGeometry);
+            
+            // Edge lines
+            const leftLineGeometry = new THREE.PlaneGeometry(0.3, segmentLength + 0.5);
+            leftLineGeometry.rotateX(-Math.PI / 2);
+            leftLineGeometry.translate(-roadWidth/2 + 0.5, 0.01, z);
+            leftLineGeometries.push(leftLineGeometry);
+            
+            const rightLineGeometry = new THREE.PlaneGeometry(0.3, segmentLength + 0.5);
+            rightLineGeometry.rotateX(-Math.PI / 2);
+            rightLineGeometry.translate(roadWidth/2 - 0.5, 0.01, z);
+            rightLineGeometries.push(rightLineGeometry);
+        }
+        
+        // Merge and create single meshes
+        const mergedRoad = new THREE.Mesh(mergeGeometries(roadGeometries), SHARED_MATERIALS.road);
+        mergedRoad.receiveShadow = true;
+        this.scene.add(mergedRoad);
+        this.roadMesh = mergedRoad;
+        
+        const mergedLeftLine = new THREE.Mesh(mergeGeometries(leftLineGeometries), SHARED_MATERIALS.roadLine);
+        this.scene.add(mergedLeftLine);
+        
+        const mergedRightLine = new THREE.Mesh(mergeGeometries(rightLineGeometries), SHARED_MATERIALS.roadLine);
+        this.scene.add(mergedRightLine);
+        
+        // Center dashed lines - merge into single geometry
+        const dashGeometries = [];
+        for (let z = -roadLength/2; z < roadLength/2; z += 8) {  // Wider spacing
+            const dashGeometry = new THREE.PlaneGeometry(0.2, 3);
+            dashGeometry.rotateX(-Math.PI / 2);
+            dashGeometry.translate(0, 0.01, z);
+            dashGeometries.push(dashGeometry);
+        }
+        const mergedDashes = new THREE.Mesh(mergeGeometries(dashGeometries), SHARED_MATERIALS.roadDash);
+        this.scene.add(mergedDashes);
+    }
+    
+    createRoadsideObjects(roadLength) {
+        // Street lamps along the road
+        this.createStreetLamps(roadLength);
+        
+        // Guard rails on cliff side
+        this.createGuardRails(roadLength);
+        
+        // Mile markers
+        this.createMileMarkers(roadLength);
+        
+        // Benches and rest areas
+        this.createRestAreas(roadLength);
+        
+        // Fallen logs and natural debris
+        this.createNaturalDebris(roadLength);
+        
+        // Road signs
+        this.createRoadSigns(roadLength);
+        
+        // Mailboxes (abandoned)
+        this.createMailboxes(roadLength);
+        
+        // Old cars/vehicles (removed for performance)
+        // this.createAbandonedVehicles(roadLength);
+    }
+    
+    createStreetLamps(roadLength) {
+        // OPTIMIZED: Fewer lamps, no dynamic lights, merged geometries
+        const lampSpacing = 150;  // Even wider spacing for performance
+        const lampCount = Math.floor(roadLength / lampSpacing);
+        
+        const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const lampHeadMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+        
+        // Merge pole geometries
+        const poleGeometries = [];
+        const armGeometries = [];
+        const headGeometries = [];
+        
+        for (let i = 0; i < lampCount; i++) {
+            const z = -roadLength/2 + i * lampSpacing + 40;
+            const side = i % 2 === 0 ? -1 : 1;
+            const x = side * 7.5;
+            
+            // Lamp pole
+            const poleGeometry = new THREE.CylinderGeometry(0.08, 0.1, 4, 6);
+            poleGeometry.translate(x, 2, z);
+            poleGeometries.push(poleGeometry);
+            
+            // Lamp arm
+            const armGeometry = new THREE.CylinderGeometry(0.04, 0.04, 1.5, 6);
+            armGeometry.rotateZ(Math.PI / 2 * -side);
+            armGeometry.translate(x - side * 0.5, 3.8, z);
+            armGeometries.push(armGeometry);
+            
+            // Lamp head
+            const lampHeadGeometry = new THREE.CylinderGeometry(0.2, 0.15, 0.3, 6);
+            lampHeadGeometry.translate(x - side * 1.2, 3.7, z);
+            headGeometries.push(lampHeadGeometry);
+        }
+        
+        if (poleGeometries.length > 0) {
+            const mergedPoles = new THREE.Mesh(mergeGeometries(poleGeometries), poleMaterial);
+            mergedPoles.castShadow = true;
+            this.scene.add(mergedPoles);
+            
+            const mergedArms = new THREE.Mesh(mergeGeometries(armGeometries), poleMaterial);
+            this.scene.add(mergedArms);
+            
+            const mergedHeads = new THREE.Mesh(mergeGeometries(headGeometries), lampHeadMaterial);
+            this.scene.add(mergedHeads);
+        }
+    }
+    
+    createGuardRails(roadLength) {
+        // OPTIMIZED: Merge all posts and rails into single geometries
+        const postGeometries = [];
+        const railGeometries = [];
+        
+        // Guard rail posts - wider spacing
+        for (let z = -roadLength/2 + 5; z < roadLength/2 - 5; z += 8) {
+            const postGeometry = new THREE.BoxGeometry(0.08, 0.8, 0.08);
+            postGeometry.translate(7, 0.4, z);
+            postGeometries.push(postGeometry);
+        }
+        
+        // Horizontal rail sections
+        for (let z = -roadLength/2 + 20; z < roadLength/2 - 20; z += 40) {
+            const railGeometry = new THREE.BoxGeometry(0.05, 0.3, 40);
+            railGeometry.translate(7, 0.5, z);
+            railGeometries.push(railGeometry);
+        }
+        
+        if (postGeometries.length > 0) {
+            const mergedPosts = new THREE.Mesh(mergeGeometries(postGeometries), SHARED_MATERIALS.metal);
+            this.scene.add(mergedPosts);
+        }
+        if (railGeometries.length > 0) {
+            const mergedRails = new THREE.Mesh(mergeGeometries(railGeometries), SHARED_MATERIALS.metal);
+            this.scene.add(mergedRails);
+        }
+    }
+    
+    createMileMarkers(roadLength) {
+        // OPTIMIZED: Merged geometries for mile markers
+        const markerMaterial = new THREE.MeshStandardMaterial({
+            color: 0x228833,
+            roughness: 0.7
+        });
+        const reflectorMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffff00,
+            emissive: 0x444400,
+            emissiveIntensity: 0.5
+        });
+        
+        const postGeometries = [];
+        const reflectorGeometries = [];
+        
+        const markerCount = Math.floor(roadLength / 150);  // Wider spacing
+        for (let i = 0; i < markerCount; i++) {
+            const z = -roadLength/2 + i * 150 + 75;
+            
+            const postGeometry = new THREE.BoxGeometry(0.15, 1, 0.1);
+            postGeometry.translate(-7.5, 0.5, z);
+            postGeometries.push(postGeometry);
+            
+            const reflectorGeometry = new THREE.BoxGeometry(0.12, 0.12, 0.02);
+            reflectorGeometry.translate(-7.5, 0.8, z + 0.06);
+            reflectorGeometries.push(reflectorGeometry);
+        }
+        
+        if (postGeometries.length > 0) {
+            const mergedPosts = new THREE.Mesh(mergeGeometries(postGeometries), markerMaterial);
+            this.scene.add(mergedPosts);
+            
+            const mergedReflectors = new THREE.Mesh(mergeGeometries(reflectorGeometries), reflectorMaterial);
+            this.scene.add(mergedReflectors);
+        }
+    }
+    
+    createRestAreas(roadLength) {
+        // OPTIMIZED: Fewer rest areas, simpler geometry
+        const restAreaPositions = [0];  // Just one rest area in the middle
+        const padMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        
+        restAreaPositions.forEach((z, index) => {
+            if (z < -roadLength/2 + 20 || z > roadLength/2 - 20) return;
+            
+            const x = -9;
+            
+            // Concrete pad
+            const padGeometry = new THREE.BoxGeometry(3, 0.1, 4);
+            const pad = new THREE.Mesh(padGeometry, padMaterial);
+            pad.position.set(x, 0.05, z);
+            this.scene.add(pad);
+            
+            // Simple bench (merged into one mesh)
+            this.createBench(x, z);
+        });
+    }
+    
+    createBench(x, z) {
+        const woodMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4a3526,
+            roughness: 0.9
+        });
+        const metalMaterial = new THREE.MeshStandardMaterial({
+            color: 0x333333,
+            metalness: 0.5
+        });
+        
+        // Bench seat
+        const seatGeometry = new THREE.BoxGeometry(1.5, 0.08, 0.4);
+        const seat = new THREE.Mesh(seatGeometry, woodMaterial);
+        seat.position.set(x, 0.5, z);
+        this.scene.add(seat);
+        
+        // Bench backrest
+        const backGeometry = new THREE.BoxGeometry(1.5, 0.5, 0.08);
+        const back = new THREE.Mesh(backGeometry, woodMaterial);
+        back.position.set(x, 0.75, z - 0.2);
+        back.rotation.x = 0.1;
+        this.scene.add(back);
+        
+        // Bench legs
+        const legGeometry = new THREE.BoxGeometry(0.08, 0.5, 0.4);
+        [-0.6, 0.6].forEach(offset => {
+            const leg = new THREE.Mesh(legGeometry, metalMaterial);
+            leg.position.set(x + offset, 0.25, z);
+            this.scene.add(leg);
+        });
+    }
+    
+    createNaturalDebris(roadLength) {
+        // OPTIMIZED: Reduced count, merged geometries by type
+        const debrisCount = this.isMobile ? 4 : 8;  // Further reduced for performance
+        
+        const branchGeometries = [];
+        const rockGeometries = [];
+        const logGeometries = [];
+        
+        const branchMaterial = new THREE.MeshStandardMaterial({ color: 0x3d2817 });
+        const logMaterial = new THREE.MeshStandardMaterial({ color: 0x2d1f14 });
+        
+        for (let i = 0; i < debrisCount; i++) {
+            const z = (Math.random() - 0.5) * (roadLength - 40);
+            const side = Math.random() > 0.5 ? -1 : 1;
+            const x = side * (8 + Math.random() * 6);
+            
+            const type = Math.random();
+            
+            if (type < 0.4) {
+                const branchGeometry = new THREE.CylinderGeometry(0.05, 0.08, 1.5, 5);
+                branchGeometry.rotateZ(Math.PI / 2);
+                branchGeometry.rotateY(Math.random() * Math.PI);
+                branchGeometry.translate(x, 0.1, z);
+                branchGeometries.push(branchGeometry);
+            } else if (type < 0.7) {
+                const rockGeometry = new THREE.DodecahedronGeometry(0.2, 0);
+                rockGeometry.translate(x, 0.1, z);
+                rockGeometries.push(rockGeometry);
+            } else {
+                const logGeometry = new THREE.CylinderGeometry(0.2, 0.25, 2.5, 6);
+                logGeometry.rotateZ(Math.PI / 2);
+                logGeometry.translate(x, 0.2, z);
+                logGeometries.push(logGeometry);
+            }
+        }
+        
+        if (branchGeometries.length > 0) {
+            const mergedBranches = new THREE.Mesh(mergeGeometries(branchGeometries), branchMaterial);
+            this.scene.add(mergedBranches);
+        }
+        if (rockGeometries.length > 0) {
+            const mergedRocks = new THREE.Mesh(mergeGeometries(rockGeometries), SHARED_MATERIALS.rock);
+            this.scene.add(mergedRocks);
+        }
+        if (logGeometries.length > 0) {
+            const mergedLogs = new THREE.Mesh(mergeGeometries(logGeometries), logMaterial);
+            this.scene.add(mergedLogs);
+        }
+    }
+    
+    createRoadSigns(roadLength) {
+        // OPTIMIZED: Fewer signs (only 1 for performance)
+        const signPositions = [
+            { z: 0, type: 'wildlife', side: -1 }
+        ];
+        
+        const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+        
+        signPositions.forEach(signData => {
+            if (signData.z < -roadLength/2 + 20 || signData.z > roadLength/2 - 20) return;
+            
+            const x = signData.side * 8;
+            
+            // Sign pole
+            const poleGeometry = new THREE.CylinderGeometry(0.04, 0.04, 2.5, 6);
+            const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+            pole.position.set(x, 1.25, signData.z);
+            this.scene.add(pole);
+            
+            // Sign face
+            let signColor, signShape;
+            switch(signData.type) {
+                case 'speed':
+                    signColor = 0xffffff;
+                    signShape = new THREE.CircleGeometry(0.35, 16);
+                    break;
+                case 'curve':
+                    signColor = 0xffcc00;
+                    signShape = new THREE.PlaneGeometry(0.6, 0.6);
+                    break;
+                case 'wildlife':
+                    signColor = 0xffcc00;
+                    signShape = new THREE.PlaneGeometry(0.6, 0.6);
+                    break;
+            }
+            
+            const signMaterial = new THREE.MeshStandardMaterial({
+                color: signColor,
+                roughness: 0.5,
+                emissive: signColor,
+                emissiveIntensity: 0.1
+            });
+            const sign = new THREE.Mesh(signShape, signMaterial);
+            sign.position.set(x, 2.3, signData.z);
+            sign.rotation.y = signData.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+            this.scene.add(sign);
+        });
+    }
+    
+    createMailboxes(roadLength) {
+        // OPTIMIZED: Fewer mailboxes, merged geometries
+        const mailboxCount = this.isMobile ? 1 : 2;  // Further reduced for performance
+        const postMaterial = new THREE.MeshStandardMaterial({ color: 0x4a3520 });
+        const postGeometries = [];
+        
+        for (let i = 0; i < mailboxCount; i++) {
+            const z = -roadLength/2 + 100 + i * (roadLength / mailboxCount);
+            const x = -8.5;
+            
+            const postGeometry = new THREE.BoxGeometry(0.1, 1.2, 0.1);
+            postGeometry.translate(x, 0.6, z);
+            postGeometries.push(postGeometry);
+            
+            // Mailbox body (individual due to different colors)
+            const bodyGeometry = new THREE.BoxGeometry(0.25, 0.2, 0.4);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: i % 2 === 0 ? 0x333333 : 0x8b0000,
+                roughness: 0.8
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.set(x, 1.15, z);
+            body.rotation.z = (Math.random() - 0.5) * 0.15;
+            this.scene.add(body);
+        }
+        
+        if (postGeometries.length > 0) {
+            const mergedPosts = new THREE.Mesh(mergeGeometries(postGeometries), postMaterial);
+            this.scene.add(mergedPosts);
+        }
+    }
+    
+    createAbandonedVehicles(roadLength) {
+        // A few abandoned vehicles for atmosphere
+        const vehiclePositions = [
+            { z: -180, x: -10, rotation: 0.3 },
+            { z: 120, x: 9, rotation: -0.2 }
+        ];
+        
+        vehiclePositions.forEach(pos => {
+            if (pos.z < -roadLength/2 + 30 || pos.z > roadLength/2 - 30) return;
+            
+            // Simple car shape
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: Math.random() > 0.5 ? 0x2a2a2a : 0x3d2a1a,
+                roughness: 0.9
+            });
+            
+            // Car body
+            const bodyGeometry = new THREE.BoxGeometry(2, 0.8, 4);
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.set(pos.x, 0.5, pos.z);
+            body.rotation.y = pos.rotation;
+            this.scene.add(body);
+            
+            // Car top
+            const topGeometry = new THREE.BoxGeometry(1.6, 0.6, 2);
+            const top = new THREE.Mesh(topGeometry, bodyMaterial);
+            top.position.set(pos.x, 1.1, pos.z);
+            top.rotation.y = pos.rotation;
+            this.scene.add(top);
+            
+            // Windows (dark)
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                roughness: 0.2
+            });
+            const windowGeometry = new THREE.PlaneGeometry(1.4, 0.4);
+            
+            // Front window
+            const frontWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+            frontWindow.position.set(
+                pos.x + Math.sin(pos.rotation) * 0.8,
+                1.1,
+                pos.z + Math.cos(pos.rotation) * 0.8
+            );
+            frontWindow.rotation.y = pos.rotation;
+            this.scene.add(frontWindow);
+        });
+    }
+    
     createGrass() {
-        const grassLength = 200;
+        const grassLength = 600;  // Match the longer road
         
         // Left side - Forest floor (darker, more mysterious)
         const forestFloorGeometry = new THREE.PlaneGeometry(50, grassLength);
@@ -162,6 +601,26 @@ export class GameScene {
         cliffEdge.receiveShadow = true;
         this.scene.add(cliffEdge);
         
+        // Additional grass patches along the road shoulders
+        const shoulderMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1a3d1a,
+            roughness: 0.95
+        });
+        
+        // Left shoulder
+        const leftShoulderGeometry = new THREE.PlaneGeometry(3, grassLength);
+        const leftShoulder = new THREE.Mesh(leftShoulderGeometry, shoulderMaterial);
+        leftShoulder.rotation.x = -Math.PI / 2;
+        leftShoulder.position.set(-7.5, -0.005, 0);
+        this.scene.add(leftShoulder);
+        
+        // Right shoulder  
+        const rightShoulderGeometry = new THREE.PlaneGeometry(3, grassLength);
+        const rightShoulder = new THREE.Mesh(rightShoulderGeometry, shoulderMaterial);
+        rightShoulder.rotation.x = -Math.PI / 2;
+        rightShoulder.position.set(7.5, -0.005, 0);
+        this.scene.add(rightShoulder);
+        
         // Create the cliff face (vertical drop)
         this.createCliff();
         
@@ -170,7 +629,7 @@ export class GameScene {
     }
     
     createCliff() {
-        const cliffLength = 200;
+        const cliffLength = 600;  // Match longer road
         
         // Cliff face - vertical wall
         const cliffGeometry = new THREE.PlaneGeometry(cliffLength, 30);
@@ -184,26 +643,28 @@ export class GameScene {
         cliffFace.position.set(21, -15, 0);
         this.scene.add(cliffFace);
         
-        // Add some rock formations on cliff edge
-        const rockCount = this.isMobile ? 12 : 30;
+        // OPTIMIZED: Use InstancedMesh for rocks, reduced count
+        const rockCount = this.isMobile ? 4 : 8;  // Further reduced for performance
+        const rockGeometry = new THREE.DodecahedronGeometry(0.4, 0);
+        const rockMesh = new THREE.InstancedMesh(rockGeometry, SHARED_MATERIALS.rock, rockCount);
+        
+        const dummy = new THREE.Object3D();
         for (let i = 0; i < rockCount; i++) {
-            const rockGeometry = new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.5, 0);
-            const rockMaterial = new THREE.MeshStandardMaterial({
-                color: 0x555555,
-                roughness: 0.9
-            });
-            const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-            rock.position.set(
+            dummy.position.set(
                 18 + Math.random() * 3,
                 0.1,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 560
             );
-            rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-            this.scene.add(rock);
+            dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+            dummy.scale.setScalar(0.5 + Math.random() * 1);
+            dummy.updateMatrix();
+            rockMesh.setMatrixAt(i, dummy.matrix);
         }
+        rockMesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(rockMesh);
         
-        // Warning signs along cliff edge
-        for (let z = -80; z <= 80; z += 40) {
+        // Warning signs along cliff edge - fewer signs
+        for (let z = -280; z <= 280; z += 200) {  // Even wider spacing
             this.createWarningSign(15, z);
         }
     }
@@ -228,8 +689,8 @@ export class GameScene {
     }
     
     createReservoir() {
-        // Water surface
-        const waterGeometry = new THREE.PlaneGeometry(100, 200);
+        // Water surface - larger for longer map
+        const waterGeometry = new THREE.PlaneGeometry(100, 600);
         const waterMaterial = new THREE.MeshStandardMaterial({
             color: 0x1a3d5c,
             roughness: 0.1,
@@ -243,71 +704,72 @@ export class GameScene {
         water.position.set(70, -28, 0);
         this.scene.add(water);
         
-        // Subtle water glow for visibility
-        const waterLight = new THREE.PointLight(0x1a5a8c, 0.5, 50);
+        // OPTIMIZED: Single water light instead of multiple
+        const waterLight = new THREE.PointLight(0x1a5a8c, 0.5, 100);
         waterLight.position.set(40, -20, 0);
         this.scene.add(waterLight);
     }
     
     createTrees() {
-        const treePositions = [];
+        // OPTIMIZED: Significantly fewer trees, using InstancedMesh
+        const treeCount = this.isMobile ? 15 : 30;  // Further reduced for performance
         
-        // Generate dense forest on LEFT side only (forest side)
-        const treeCount = this.isMobile ? 70 : 150;
+        // Create instanced meshes for trunks and foliage
+        const trunkGeometry = new THREE.CylinderGeometry(0.35, 0.5, 4, 5);
+        const foliageGeometry = new THREE.ConeGeometry(3, 6, 6);
+        
+        const trunkMesh = new THREE.InstancedMesh(trunkGeometry, SHARED_MATERIALS.trunk, treeCount);
+        const foliageMesh = new THREE.InstancedMesh(foliageGeometry, SHARED_MATERIALS.foliage, treeCount);
+        
+        const dummy = new THREE.Object3D();
+        
         for (let i = 0; i < treeCount; i++) {
-            const x = -(12 + Math.random() * 40); // Only negative X (left side)
-            const z = (Math.random() - 0.5) * 180;
-            treePositions.push({ x, z });
+            const x = -(12 + Math.random() * 40);
+            const z = (Math.random() - 0.5) * 560;
+            const scale = 0.6 + Math.random() * 0.8;
+            
+            // Trunk
+            dummy.position.set(x, 2 * scale, z);
+            dummy.scale.set(scale, scale, scale);
+            dummy.updateMatrix();
+            trunkMesh.setMatrixAt(i, dummy.matrix);
+            
+            // Foliage
+            dummy.position.set(x, 5 * scale, z);
+            dummy.scale.set(scale, scale + Math.random() * 0.3, scale);
+            dummy.updateMatrix();
+            foliageMesh.setMatrixAt(i, dummy.matrix);
         }
         
-        // Create tree silhouettes
-        treePositions.forEach(pos => {
-            const height = 5 + Math.random() * 10;
-            const radius = 2 + Math.random() * 3;
-            
-            // Tree trunk
-            const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, height * 0.4, 6);
-            const trunkMaterial = new THREE.MeshStandardMaterial({
-                color: 0x1a1510,
-                roughness: 1
-            });
-            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-            trunk.position.set(pos.x, height * 0.2, pos.z);
-            this.scene.add(trunk);
-            
-            // Tree foliage (cone)
-            const foliageGeometry = new THREE.ConeGeometry(radius, height * 0.7, 8);
-            const foliageMaterial = new THREE.MeshStandardMaterial({
-                color: 0x0a1a0a,
-                roughness: 1
-            });
-            const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
-            foliage.position.set(pos.x, height * 0.4 + height * 0.35, pos.z);
-            this.scene.add(foliage);
-        });
+        trunkMesh.instanceMatrix.needsUpdate = true;
+        foliageMesh.instanceMatrix.needsUpdate = true;
         
-        // Add some bushes/undergrowth in forest for atmosphere
-        const bushCount = this.isMobile ? 20 : 50;
+        this.scene.add(trunkMesh);
+        this.scene.add(foliageMesh);
+        
+        // OPTIMIZED: Fewer bushes using InstancedMesh
+        const bushCount = this.isMobile ? 4 : 8;  // Further reduced for performance
+        const bushGeometry = new THREE.SphereGeometry(0.6, 5, 4);
+        const bushMesh = new THREE.InstancedMesh(bushGeometry, SHARED_MATERIALS.bush, bushCount);
+        
         for (let i = 0; i < bushCount; i++) {
-            const bushGeometry = new THREE.SphereGeometry(0.5 + Math.random() * 0.5, 6, 6);
-            const bushMaterial = new THREE.MeshStandardMaterial({
-                color: 0x0d1a0d,
-                roughness: 1
-            });
-            const bush = new THREE.Mesh(bushGeometry, bushMaterial);
-            bush.position.set(
+            dummy.position.set(
                 -(10 + Math.random() * 15),
                 0.3,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 560
             );
-            bush.scale.y = 0.6;
-            this.scene.add(bush);
+            dummy.scale.set(1, 0.6, 1);
+            dummy.updateMatrix();
+            bushMesh.setMatrixAt(i, dummy.matrix);
         }
+        
+        bushMesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(bushMesh);
     }
     
     createStars() {
         const starGeometry = new THREE.BufferGeometry();
-        const starCount = this.isMobile ? 200 : 500;
+        const starCount = this.isMobile ? 50 : 100;
         const positions = new Float32Array(starCount * 3);
         
         for (let i = 0; i < starCount; i++) {
@@ -334,8 +796,8 @@ export class GameScene {
     }
     
     createRain() {
-        // Rain particle system
-        const rainCount = this.isMobile ? 6000 : 15000;
+        // OPTIMIZED: Reduced rain particle count significantly
+        const rainCount = this.isMobile ? 1500 : 3000;  // Reduced for smoother FPS
         const rainGeometry = new THREE.BufferGeometry();
         
         const positions = new Float32Array(rainCount * 3);
@@ -343,9 +805,9 @@ export class GameScene {
         
         for (let i = 0; i < rainCount; i++) {
             // Spread rain over a large area around player
-            positions[i * 3] = (Math.random() - 0.5) * 100;
-            positions[i * 3 + 1] = Math.random() * 50;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+            positions[i * 3] = (Math.random() - 0.5) * 80;
+            positions[i * 3 + 1] = Math.random() * 40;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
             
             // Random fall speed
             velocities[i] = 0.5 + Math.random() * 0.5;
@@ -359,7 +821,7 @@ export class GameScene {
         
         const rainMaterial = new THREE.PointsMaterial({
             color: 0x8899aa,
-            size: 0.1,
+            size: 0.12,  // Slightly larger to compensate for fewer particles
             transparent: true,
             opacity: 0.6,
             blending: THREE.AdditiveBlending
@@ -371,9 +833,16 @@ export class GameScene {
     
     updateRain(deltaTime, cameraPosition) {
         if (!this.rain) return;
+        
+        // Throttle updates - only update every other frame
+        this.updateFrameCounter++;
+        if (this.updateFrameCounter % 2 !== 0 && !this.isMobile) {
+            return;
+        }
+        
         if (this.isMobile) {
             this.rainUpdateAccumulator += deltaTime;
-            if (this.rainUpdateAccumulator < 1 / 30) {
+            if (this.rainUpdateAccumulator < 1 / 20) {  // Slower mobile updates
                 return;
             }
             deltaTime = this.rainUpdateAccumulator;
@@ -382,19 +851,24 @@ export class GameScene {
         
         const positions = this.rainGeometry.attributes.position.array;
         const rainCount = positions.length / 3;
+        const speed = deltaTime * 30;
+        const windSpeed = deltaTime * 2;
         
+        // Batch update for better cache performance
         for (let i = 0; i < rainCount; i++) {
+            const idx = i * 3;
+            
             // Fall down
-            positions[i * 3 + 1] -= this.rainVelocities[i] * deltaTime * 30;
+            positions[idx + 1] -= this.rainVelocities[i] * speed;
             
             // Add slight wind effect
-            positions[i * 3] += deltaTime * 2;
+            positions[idx] += windSpeed;
             
             // Reset when hitting ground
-            if (positions[i * 3 + 1] < 0) {
-                positions[i * 3] = cameraPosition.x + (Math.random() - 0.5) * 100;
-                positions[i * 3 + 1] = 40 + Math.random() * 10;
-                positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 100;
+            if (positions[idx + 1] < 0) {
+                positions[idx] = cameraPosition.x + (Math.random() - 0.5) * 100;
+                positions[idx + 1] = 40 + Math.random() * 10;
+                positions[idx + 2] = cameraPosition.z + (Math.random() - 0.5) * 100;
             }
         }
         
@@ -402,55 +876,65 @@ export class GameScene {
     }
     
     createPuddles() {
-        // Random puddles on the road for realism
-        const puddleCount = this.isMobile ? 10 : 20;
+        // OPTIMIZED: Merged puddle geometries, reduced counts
+        const puddleGeometries = [];
+        const edgePuddleGeometries = [];
+        
+        const puddleMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1a1a2e,
+            roughness: 0.1,
+            metalness: 0.8,
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        const edgePuddleMaterial = new THREE.MeshStandardMaterial({
+            color: 0x151525,
+            roughness: 0.05,
+            metalness: 0.9,
+            transparent: true,
+            opacity: 0.6
+        });
+        
+        // Road puddles - reduced count
+        const puddleCount = this.isMobile ? 6 : 12;  // Further reduced for performance
         for (let i = 0; i < puddleCount; i++) {
-            const puddleGeometry = new THREE.CircleGeometry(0.5 + Math.random() * 1, 16);
-            const puddleMaterial = new THREE.MeshStandardMaterial({
-                color: 0x1a1a2e,
-                roughness: 0.1,
-                metalness: 0.8,
-                transparent: true,
-                opacity: 0.7
-            });
-            
-            const puddle = new THREE.Mesh(puddleGeometry, puddleMaterial);
-            puddle.rotation.x = -Math.PI / 2;
-            puddle.position.set(
+            const puddleGeometry = new THREE.CircleGeometry(0.8 + Math.random() * 0.8, 6);  // Even fewer segments
+            puddleGeometry.rotateX(-Math.PI / 2);
+            puddleGeometry.translate(
                 (Math.random() - 0.5) * 10,
                 0.02,
-                (Math.random() - 0.5) * 180
+                (Math.random() - 0.5) * 560
             );
-            puddle.scale.set(1 + Math.random(), 0.6 + Math.random() * 0.4, 1);
-            this.scene.add(puddle);
+            puddleGeometries.push(puddleGeometry);
         }
         
-        // Some larger puddles near the road edges
-        const edgePuddleCount = this.isMobile ? 4 : 8;
+        // Edge puddles - reduced count
+        const edgePuddleCount = this.isMobile ? 3 : 6;  // Further reduced for performance
         for (let i = 0; i < edgePuddleCount; i++) {
-            const puddleGeometry = new THREE.CircleGeometry(1.5 + Math.random() * 1.5, 16);
-            const puddleMaterial = new THREE.MeshStandardMaterial({
-                color: 0x151525,
-                roughness: 0.05,
-                metalness: 0.9,
-                transparent: true,
-                opacity: 0.6
-            });
-            
-            const puddle = new THREE.Mesh(puddleGeometry, puddleMaterial);
-            puddle.rotation.x = -Math.PI / 2;
+            const puddleGeometry = new THREE.CircleGeometry(1.8, 8);  // Fewer segments
+            puddleGeometry.rotateX(-Math.PI / 2);
             const side = Math.random() > 0.5 ? 1 : -1;
-            puddle.position.set(
+            puddleGeometry.translate(
                 side * (6 + Math.random() * 3),
                 0.02,
-                (Math.random() - 0.5) * 150
+                (Math.random() - 0.5) * 500
             );
-            this.scene.add(puddle);
+            edgePuddleGeometries.push(puddleGeometry);
+        }
+        
+        // Create merged meshes
+        if (puddleGeometries.length > 0) {
+            const mergedPuddles = new THREE.Mesh(mergeGeometries(puddleGeometries), puddleMaterial);
+            this.scene.add(mergedPuddles);
+        }
+        if (edgePuddleGeometries.length > 0) {
+            const mergedEdgePuddles = new THREE.Mesh(mergeGeometries(edgePuddleGeometries), edgePuddleMaterial);
+            this.scene.add(mergedEdgePuddles);
         }
         
         // Store puddle positions for splash effects
         this.puddlePositions = [];
-        // Will be populated during gameplay for splash detection
     }
     
     // Create rain splash particle system
@@ -489,14 +973,14 @@ export class GameScene {
     updateSplashes(deltaTime, cameraPosition) {
         if (this.isMobile) {
             this.splashUpdateAccumulator += deltaTime;
-            if (this.splashUpdateAccumulator < 1 / 30) {
+            if (this.splashUpdateAccumulator < 1 / 20) {  // Slower updates
                 return;
             }
             deltaTime = this.splashUpdateAccumulator;
             this.splashUpdateAccumulator = 0;
         }
-        // Spawn new splashes near player (simulating rain hitting ground)
-        const splashChance = this.isMobile ? 0.15 : 0.3;
+        // Spawn new splashes near player (reduced rate)
+        const splashChance = this.isMobile ? 0.05 : 0.1;  // Significantly reduced
         if (Math.random() < splashChance) {
             const x = cameraPosition.x + (Math.random() - 0.5) * 20;
             const z = cameraPosition.z + (Math.random() - 0.5) * 20;
@@ -530,9 +1014,7 @@ export class GameScene {
         // Distant moonlight through clouds - very dim and blue-ish
         const moonlight = new THREE.DirectionalLight(0x6666aa, 0.08);
         moonlight.position.set(20, 50, 10);
-        moonlight.castShadow = true;
-        moonlight.shadow.mapSize.width = 512;
-        moonlight.shadow.mapSize.height = 512;
+        moonlight.castShadow = false;  // Disabled for performance
         this.scene.add(moonlight);
     }
     

@@ -75,6 +75,131 @@ body {
     background-position: center;
 }
 
+/* Intro Video Overlay */
+#intro-video-overlay {
+    background: #000;
+    z-index: 150;
+}
+
+#intro-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+#skip-video-btn {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 151;
+}
+
+#skip-video-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+#skip-video-btn .fas {
+    margin-right: 8px;
+}
+
+/* Loading Screen */
+#loading-screen {
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+    z-index: 160;
+}
+
+.loading-content {
+    text-align: center;
+    padding: 40px;
+}
+
+.loading-icon {
+    color: #4CAF50;
+    animation: bounce 1s infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-20px); }
+}
+
+.loading-content h2 {
+    font-size: 2rem;
+    margin-bottom: 30px;
+    color: #fff;
+}
+
+.loading-bar {
+    width: 300px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 0 auto 20px;
+}
+
+.loading-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #8BC34A);
+    border-radius: 10px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+#loading-text {
+    color: #aaa;
+    font-size: 0.9rem;
+}
+
+/* Pointer lock prompt */
+#pointer-lock-overlay {
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 155;
+}
+
+.pointer-lock-content {
+    text-align: center;
+    padding: 40px;
+    max-width: 420px;
+}
+
+.pointer-lock-content h2 {
+    color: #fff;
+    font-size: 2rem;
+    margin-bottom: 12px;
+}
+
+.pointer-lock-content p {
+    color: #bbb;
+    margin-bottom: 20px;
+}
+
+#pointer-lock-btn {
+    padding: 12px 24px;
+    font-size: 1rem;
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+#pointer-lock-btn:hover {
+    background: #45a049;
+    transform: translateY(-1px);
+}
+
 .hidden,
 .overlay.hidden {
     display: none;
@@ -219,6 +344,58 @@ button:hover {
 .button-row button {
     padding: 12px 25px;
     font-size: 1rem;
+}
+
+/* Level Selection */
+.level-selection {
+    margin: 30px 0;
+}
+
+.level-selection h3 {
+    font-size: 1.3rem;
+    margin-bottom: 15px;
+    color: #ffd700;
+}
+
+.level-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.level-btn {
+    padding: 20px 25px;
+    font-size: 1.1rem;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 140, 0, 0.15));
+    border: 2px solid rgba(255, 215, 0, 0.5);
+    color: #fff;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 140px;
+}
+
+.level-btn:hover {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 140, 0, 0.3));
+    border-color: rgba(255, 215, 0, 0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+}
+
+.level-btn .fas {
+    color: #ffd700;
+    margin: 0 2px;
+}
+
+.level-desc {
+    font-size: 0.8rem;
+    color: #ccc;
+    font-weight: normal;
 }
 
 /* Score Submission */

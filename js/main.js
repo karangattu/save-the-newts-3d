@@ -15,13 +15,15 @@ class Game {
         this.state = 'menu'; // 'menu', 'playing', 'gameover'
         this.isMobile = false;
         this.isVisibilityPaused = false;
+        this.currentLevel = 1; // Current level (1, 2, or 3)
 
         // Timing
         this.clock = null;
         this.elapsedTime = 0;
         this.lastTime = 0;
+        this.updateFrameCounter = 0;
 
-        // High score
+        // High score per level
         this.highScore = parseInt(localStorage.getItem('newtRescueHighScore')) || 0;
 
         // Car engine sounds
@@ -61,10 +63,11 @@ class Game {
         // Create managers
         this.newtManager = new NewtManager(
             this.gameScene.scene,
-            this.flashlight
+            this.flashlight,
+            this.isMobile
         );
 
-        this.carManager = new CarManager(this.gameScene.scene);
+        this.carManager = new CarManager(this.gameScene.scene, this.isMobile);
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
         this.predatorManager = new PredatorManager(this.gameScene.scene, this.gameScene.camera);
@@ -75,7 +78,7 @@ class Game {
 
     setupEventListeners() {
         // Start button
-        this.ui.onStartClick(() => this.startGame());
+        this.ui.onStartClick((level) => this.startGame(level));
 
         // Restart button
         this.ui.onRestartClick(() => this.startGame());
@@ -86,6 +89,14 @@ class Game {
         this.ui.onSubmitScore(() => this.submitScore());
 
         this.ui.onFlashlightToggle(() => this.toggleFlashlight());
+
+        // Keyboard shortcut for flashlight toggle (F key)
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyF' && this.state === 'playing') {
+                e.preventDefault();
+                this.toggleFlashlight();
+            }
+        });
 
         // Pointer lock change (desktop only)
         if (!this.isMobile) {
@@ -108,10 +119,22 @@ class Game {
         });
     }
 
-    startGame() {
+    startGame(level = 1) {
         // Initialize audio context (requires user interaction)
         this.audioManager.init();
+        
+        // Store selected level
+        this.currentLevel = level;
 
+        // Hide start screen and show intro video
+        this.ui.hideStartScreen();
+        this.ui.playIntroVideo(() => {
+            // This callback runs after video ends or is skipped
+            this.beginGameplay();
+        });
+    }
+
+    beginGameplay() {
         // Reset all systems
         this.player.reset();
         this.flashlight.reset();
@@ -122,13 +145,15 @@ class Game {
 
         // Clear car engine sounds
         this.carEngineSounds.clear();
+        
+        // Apply level difficulty settings
+        this.applyLevelSettings(this.currentLevel);
 
         // Reset timing
         this.elapsedTime = 0;
         this.lastTime = performance.now() / 1000;
 
         // Update UI
-        this.ui.hideStartScreen();
         this.ui.hideGameOver();
         this.ui.showGameScreen();
         this.ui.updateBattery(100);
@@ -218,12 +243,14 @@ class Game {
     update(deltaTime) {
         if (this.state !== 'playing') return;
 
+        // Throttle heavy updates to every other frame
+        this.updateFrameCounter++;
+        const isHeavyFrame = (this.updateFrameCounter % 2 === 0);
+
         // Update elapsed time
         this.elapsedTime += deltaTime;
 
-        // Update rain and splashes
-        this.gameScene.updateRain(deltaTime, this.player.getPosition());
-        this.gameScene.updateSplashes(deltaTime, this.player.getPosition());
+        // Rain removed for performance
 
         // Update player
         const isMoving = this.player.update(deltaTime);
@@ -234,10 +261,12 @@ class Game {
         }
 
         // Check danger zones (cliff and forest)
-        const dangerCheck = this.checkDangerZones();
-        if (dangerCheck.inDanger) {
-            this.handleDangerZone(dangerCheck);
-            return;
+        if (isHeavyFrame) {
+            const dangerCheck = this.checkDangerZones();
+            if (dangerCheck.inDanger) {
+                this.handleDangerZone(dangerCheck);
+                return;
+            }
         }
 
         // Update flashlight
@@ -267,37 +296,45 @@ class Game {
         }
 
         // Update cars
-        this.carManager.update(deltaTime, this.elapsedTime);
+        if (isHeavyFrame) {
+            this.carManager.update(deltaTime, this.elapsedTime);
+        }
 
         // Check for cars crushing newts
-        const crushedNewts = this.carManager.checkNewtCollisions(this.newtManager.getNewts());
-        crushedNewts.forEach(newt => {
-            this.newtManager.crushNewt(newt);
-            this.audioManager.playNewtCrushSound();
-        });
+        if (isHeavyFrame) {
+            const crushedNewts = this.carManager.checkNewtCollisions(this.newtManager.getNewts());
+            crushedNewts.forEach(newt => {
+                this.newtManager.crushNewt(newt);
+                this.audioManager.playNewtCrushSound();
+            });
+        }
 
         // Update car engine sounds
         this.updateCarEngineSounds();
 
         // Check car collision
-        const collisionResult = this.carManager.checkCollision(
-            this.player.getCollisionBox()
-        );
-        if (collisionResult.collision) {
-            this.gameOver(collisionResult.isStealth ? 'stealth-car' : 'car');
-            return;
+        if (isHeavyFrame) {
+            const collisionResult = this.carManager.checkCollision(
+                this.player.getCollisionBox()
+            );
+            if (collisionResult.collision) {
+                this.gameOver(collisionResult.isStealth ? 'stealth-car' : 'car');
+                return;
+            }
         }
 
         // Check near-miss
-        const nearMissResult = this.carManager.checkNearMiss(
-            this.player.getNearMissBox(),
-            this.player.getCollisionBox()
-        );
-        if (nearMissResult) {
-            this.audioManager.playNearMissSound();
-            this.ui.triggerNearMissEffect();
-            this.ui.hapticWarning(); // Haptic feedback for near-miss
-            this.gameScene.triggerCameraShake(0.15);
+        if (isHeavyFrame) {
+            const nearMissResult = this.carManager.checkNearMiss(
+                this.player.getNearMissBox(),
+                this.player.getCollisionBox()
+            );
+            if (nearMissResult) {
+                this.audioManager.playNearMissSound();
+                this.ui.triggerNearMissEffect();
+                this.ui.hapticWarning(); // Haptic feedback for near-miss
+                this.gameScene.triggerCameraShake(0.15);
+            }
         }
 
         // Check battery
@@ -482,6 +519,30 @@ class Game {
             this.ui.renderLeaderboard(result.scores);
         } else {
             this.ui.showLeaderboardError(result.error);
+        }
+    }
+    
+    applyLevelSettings(level) {
+        // Level 1: Easy - Slower traffic, slower battery drain
+        // Level 2: Medium - Normal speed
+        // Level 3: Hard - Faster traffic, faster battery drain, more cars
+        
+        switch(level) {
+            case 1:
+                this.carManager.setDifficultyMultiplier(0.7); // 30% slower
+                this.flashlight.setDrainMultiplier(0.7); // 30% slower drain
+                this.flashlight.setBattery(100); // Full battery
+                break;
+            case 2:
+                this.carManager.setDifficultyMultiplier(1.0); // Normal speed
+                this.flashlight.setDrainMultiplier(1.0); // Normal drain
+                this.flashlight.setBattery(100); // Full battery
+                break;
+            case 3:
+                this.carManager.setDifficultyMultiplier(1.4); // 40% faster
+                this.flashlight.setDrainMultiplier(1.5); // 50% faster drain
+                this.flashlight.setBattery(70); // Start with less battery
+                break;
         }
     }
 

@@ -2,18 +2,20 @@
 import * as THREE from 'three';
 
 export class NewtManager {
-    constructor(scene, flashlight) {
+    constructor(scene, flashlight, isMobile = false) {
         this.scene = scene;
         this.flashlight = flashlight;
+        this.isMobile = isMobile;
 
         this.newts = [];
         this.rescuedCount = 0;
 
         // Spawn settings
-        this.baseSpawnInterval = 3; // seconds
+        this.baseSpawnInterval = isMobile ? 5 : 4.2; // seconds (slower for performance)
         this.spawnTimer = 0;
+        this.maxNewts = isMobile ? 6 : 12;
         this.roadWidth = 12;
-        this.roadLength = 200;
+        this.roadLength = 600;  // Longer road for exploration
 
         // Rescue settings
         this.rescueDistance = 1.5; // Auto-rescue distance
@@ -79,11 +81,11 @@ export class NewtManager {
         // Eyes - distinctive yellow-orange with dark pupils (like photo)
         const eyeWhiteGeometry = new THREE.SphereGeometry(0.035, 10, 10);
         const eyeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xFFAA00,  // Yellow-orange iris
-            emissive: 0x664400,
-            emissiveIntensity: 0.5,
-            roughness: 0.3,
-            metalness: 0.2
+            color: 0xFFFF00,  // Bright yellow for visibility
+            emissive: 0xFFAA00,  // Bright orange glow
+            emissiveIntensity: 3.0,  // Very bright to see in the dark
+            roughness: 0.2,
+            metalness: 0.1
         });
 
         const leftEyeWhite = new THREE.Mesh(eyeWhiteGeometry, eyeMaterial);
@@ -243,7 +245,7 @@ export class NewtManager {
 
         // Spawn timer
         this.spawnTimer += deltaTime;
-        if (this.spawnTimer >= spawnInterval) {
+        if (this.spawnTimer >= spawnInterval && this.newts.length < this.maxNewts) {
             this.spawnNewt();
             this.spawnTimer = 0;
         }
@@ -286,29 +288,28 @@ export class NewtManager {
                 newt.walkCycle += deltaTime * newt.speed * 12;
             }
 
-            // Get leg references
-            const legs = newt.mesh.userData.legs;
-            if (legs) {
-                // Diagonal gait - front right + back left move together, then front left + back right
-                const legSwing = newt.isPaused ? 0 : 0.4; // No leg movement when paused
-                const phase = newt.walkCycle;
+            // Simplified animations - only if not paused
+            if (!newt.isPaused) {
+                const legs = newt.mesh.userData.legs;
+                if (legs) {
+                    // Simplified leg animation
+                    const phase = newt.walkCycle;
+                    const swing = 0.3;
 
-                // Front right and back left (in sync)
-                legs.frontRight.rotation.x = Math.sin(phase) * legSwing;
-                legs.frontRight.rotation.z = Math.sin(phase) * 0.15 - 0.2;
-                legs.backLeft.rotation.x = Math.sin(phase) * legSwing;
-                legs.backLeft.rotation.z = -Math.sin(phase) * 0.15 + 0.2;
+                    // Front right and back left (in sync)
+                    const sin1 = Math.sin(phase);
+                    legs.frontRight.rotation.x = sin1 * swing;
+                    legs.backLeft.rotation.x = sin1 * swing;
 
-                // Front left and back right (opposite phase)
-                legs.frontLeft.rotation.x = Math.sin(phase + Math.PI) * legSwing;
-                legs.frontLeft.rotation.z = Math.sin(phase + Math.PI) * 0.15 + 0.2;
-                legs.backRight.rotation.x = Math.sin(phase + Math.PI) * legSwing;
-                legs.backRight.rotation.z = -Math.sin(phase + Math.PI) * 0.15 - 0.2;
+                    // Front left and back right (opposite phase)
+                    const sin2 = Math.sin(phase + Math.PI);
+                    legs.frontLeft.rotation.x = sin2 * swing;
+                    legs.backRight.rotation.x = sin2 * swing;
+                }
+
+                // Simplified body bob
+                newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.015;
             }
-
-            // Body bob and tail wiggle
-            newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.015;
-            newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.5) * 0.002; // Subtle side-to-side
 
             // Check if illuminated
             newt.isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
@@ -325,6 +326,7 @@ export class NewtManager {
             if (distance < this.rescueDistance) {
                 // Auto-rescue!
                 this.scene.remove(newt.mesh);
+                this.disposeNewt(newt);
                 this.newts.splice(i, 1);
                 this.rescuedCount++;
                 rescuedNewts.push(newt);
@@ -335,6 +337,7 @@ export class NewtManager {
             if ((direction > 0 && newt.mesh.position.x > newt.targetX) ||
                 (direction < 0 && newt.mesh.position.x < newt.targetX)) {
                 this.scene.remove(newt.mesh);
+                this.disposeNewt(newt);
                 this.newts.splice(i, 1);
             }
         }
@@ -343,6 +346,24 @@ export class NewtManager {
     }
 
 
+
+    disposeNewt(newt) {
+        // Properly dispose of newt geometry and materials
+        if (newt.mesh) {
+            newt.mesh.traverse((child) => {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+    }
 
     getRescuedCount() {
         return this.rescuedCount;

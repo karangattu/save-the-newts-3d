@@ -25,10 +25,47 @@
                 <p class="micro-note">Avoid traffic. Battery refills on rescue.</p>
             </div>
             
+            <div class="level-selection">
+                <h3>Select Difficulty</h3>
+                <div class="level-buttons">
+                    <button class="level-btn" data-level="1">
+                        <i class="fas fa-star"></i> Easy
+                        <span class="level-desc">Slow traffic, more time</span>
+                    </button>
+                    <button class="level-btn" data-level="2">
+                        <i class="fas fa-star"></i><i class="fas fa-star"></i> Medium
+                        <span class="level-desc">Normal speed</span>
+                    </button>
+                    <button class="level-btn" data-level="3">
+                        <i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i> Hard
+                        <span class="level-desc">Fast traffic, less battery</span>
+                    </button>
+                </div>
+            </div>
+            
             <div class="button-row">
-                <button id="start-button"><i class="fas fa-play"></i> Start Game</button>
                 <button id="view-leaderboard-btn"><i class="fas fa-trophy"></i> Leaderboard</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Intro Video Overlay -->
+    <div id="intro-video-overlay" class="overlay hidden">
+        <video id="intro-video" playsinline muted preload="auto" width="1280" height="720">
+            <source src="assets/game_start_video.mp4" type="video/mp4">
+        </video>
+        <button id="skip-video-btn"><i class="fas fa-forward"></i> Skip</button>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="overlay hidden">
+        <div class="loading-content">
+            <i class="fas fa-frog fa-3x loading-icon"></i>
+            <h2>Loading...</h2>
+            <div class="loading-bar">
+                <div id="loading-progress" class="loading-fill"></div>
+            </div>
+            <p id="loading-text">Preparing game assets</p>
         </div>
     </div>
 

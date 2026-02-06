@@ -10,7 +10,7 @@ export class Flashlight {
         // Battery properties
         this.battery = 100;
         this.baseDrainRate = 2; // % per second base rate
-        this.drainMultiplier = 1;
+        this.drainMultiplier = 1.0; // Difficulty multiplier
         this.isEnabled = true;
         
         // Flashlight properties - brighter on mobile for visibility
@@ -170,11 +170,19 @@ export class Flashlight {
     
     reset() {
         this.battery = 100;
-        this.drainMultiplier = 1;
+        this.drainMultiplier = 1.0;
         this.isEnabled = true;
         this.isFlickering = false;
         this.flickerTimer = 0;
         this.spotlight.intensity = this.maxIntensity;
         this.fillLight.intensity = 0.3;
+    }
+    
+    setDrainMultiplier(multiplier) {
+        this.drainMultiplier = multiplier;
+    }
+    
+    setBattery(amount) {
+        this.battery = Math.max(0, Math.min(100, amount));
     }
 }

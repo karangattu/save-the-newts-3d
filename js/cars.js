@@ -12,16 +12,19 @@ const VEHICLE_TYPES = {
 };
 
 export class CarManager {
-    constructor(scene) {
+    constructor(scene, isMobile = false) {
         this.scene = scene;
+        this.isMobile = isMobile;
         
         this.cars = [];
+        this.difficultyMultiplier = 1.0; // Affects speed and spawn rate
         
         // Spawn settings
-        this.baseSpawnInterval = 4; // seconds
+        this.baseSpawnInterval = isMobile ? 5.5 : 4.5; // seconds (slower for performance)
         this.spawnTimer = 0;
+        this.maxCars = isMobile ? 4 : 8;
         this.roadWidth = 12;
-        this.roadLength = 200;
+        this.roadLength = 600;  // Longer road for exploration
         
         // Stealth car settings
         this.baseStealthChance = 0.1; // 10% base chance
@@ -43,6 +46,10 @@ export class CarManager {
         if (rand < 0.85) return VEHICLE_TYPES.TRUCK;
         if (rand < 0.92) return VEHICLE_TYPES.SEMI;
         return VEHICLE_TYPES.MOTORCYCLE;
+    }
+    
+    setDifficultyMultiplier(multiplier) {
+        this.difficultyMultiplier = multiplier;
     }
     
     createVehicleMesh(isStealth, vehicleType) {
@@ -561,11 +568,14 @@ export class CarManager {
         if (vehicleType === VEHICLE_TYPES.SEMI) baseSpeed = 6;
         if (vehicleType === VEHICLE_TYPES.TRUCK) baseSpeed = 7;
         
+        // Apply difficulty multiplier
+        const speed = (baseSpeed + Math.random() * 6) * this.difficultyMultiplier;
+        
         const car = {
             mesh: mesh,
             lane: lane,
             direction: direction,
-            speed: baseSpeed + Math.random() * 6,
+            speed: speed,
             isStealth: isStealth,
             hasTriggeredNearMiss: false,
             vehicleType: vehicleType
@@ -581,7 +591,7 @@ export class CarManager {
         
         // Spawn timer
         this.spawnTimer += deltaTime;
-        if (this.spawnTimer >= spawnInterval) {
+        if (this.spawnTimer >= spawnInterval && this.cars.length < this.maxCars) {
             this.spawnCar(elapsedTime);
             this.spawnTimer = 0;
         }
@@ -600,6 +610,7 @@ export class CarManager {
             const removeZ = this.roadLength / 2 + 20;
             if (car.mesh.position.z > removeZ || car.mesh.position.z < -removeZ) {
                 this.scene.remove(car.mesh);
+                this.disposeCar(car);
                 this.cars.splice(i, 1);
             }
         }
@@ -701,9 +712,26 @@ export class CarManager {
         // Remove all cars
         this.cars.forEach(car => {
             this.scene.remove(car.mesh);
+            this.disposeCar(car);
         });
         this.cars = [];
         this.spawnTimer = 0;
-        this.lastNearMiss = 0;
+        this.lastNearMiss = 999;
+    }
+
+    disposeCar(car) {
+        // Dispose geometries and materials to free memory
+        if (car.mesh) {
+            car.mesh.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
     }
 }

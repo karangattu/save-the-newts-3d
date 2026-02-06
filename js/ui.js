@@ -7,6 +7,11 @@ export class UIManager {
         this.hud = document.getElementById('hud');
         this.vignette = document.getElementById('vignette');
         this.mobileControls = document.getElementById('mobile-controls');
+        
+        // Loading screen elements
+        this.loadingScreen = document.getElementById('loading-screen');
+        this.loadingProgress = document.getElementById('loading-progress');
+        this.loadingText = document.getElementById('loading-text');
 
         // HUD elements
         this.batteryFill = document.getElementById('battery-fill');
@@ -47,6 +52,11 @@ export class UIManager {
 
         // First time player check for onboarding
         this.isFirstPlay = !localStorage.getItem('newtRescuePlayed');
+
+        // Pointer lock prompt (desktop)
+        this.pointerLockOverlay = null;
+        this.pointerLockButton = null;
+        this.createPointerLockPrompt();
 
 
 
@@ -104,6 +114,46 @@ export class UIManager {
         this.rescueFeedback = feedback;
     }
 
+    createPointerLockPrompt() {
+        if (this.pointerLockOverlay) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'pointer-lock-overlay';
+        overlay.classList.add('overlay', 'hidden');
+        overlay.innerHTML = `
+            <div class="pointer-lock-content">
+                <h2>Click to Play</h2>
+                <p>Click anywhere to lock the cursor and look around.</p>
+                <button id="pointer-lock-btn">Start</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        this.pointerLockOverlay = overlay;
+        this.pointerLockButton = overlay.querySelector('#pointer-lock-btn');
+    }
+
+    promptPointerLock(onComplete) {
+        if (this.isMobile || !this.pointerLockOverlay) {
+            onComplete();
+            return;
+        }
+
+        const finish = () => {
+            this.pointerLockOverlay.classList.add('hidden');
+            this.pointerLockOverlay.removeEventListener('click', finish);
+            if (this.pointerLockButton) {
+                this.pointerLockButton.removeEventListener('click', finish);
+            }
+            onComplete();
+        };
+
+        this.pointerLockOverlay.classList.remove('hidden');
+        this.pointerLockOverlay.addEventListener('click', finish);
+        if (this.pointerLockButton) {
+            this.pointerLockButton.addEventListener('click', finish);
+        }
+    }
+
     showRescueFeedback() {
         if (this.rescueFeedback) {
             this.rescueFeedback.classList.remove('show');
@@ -120,6 +170,151 @@ export class UIManager {
 
     hideStartScreen() {
         this.startScreen.classList.add('hidden');
+    }
+
+    showLoadingScreen() {
+        if (this.loadingScreen) {
+            this.loadingScreen.classList.remove('hidden');
+        }
+    }
+
+    hideLoadingScreen() {
+        if (this.loadingScreen) {
+            this.loadingScreen.classList.add('hidden');
+        }
+    }
+
+    updateLoadingProgress(percent, text) {
+        if (this.loadingProgress) {
+            this.loadingProgress.style.width = percent + '%';
+        }
+        if (this.loadingText && text) {
+            this.loadingText.textContent = text;
+        }
+    }
+
+    async preloadAndBufferVideo(video, onProgressCallback) {
+        return new Promise((resolve, reject) => {
+            if (!video) {
+                reject(new Error('Video element not found'));
+                return;
+            }
+
+            // Check if already loaded
+            if (video.readyState >= 4) {
+                onProgressCallback(100, 'Video ready');
+                resolve();
+                return;
+            }
+
+            // Track progress
+            const updateProgress = () => {
+                if (video.buffered.length > 0) {
+                    const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                    const duration = video.duration;
+                    if (duration > 0) {
+                        const percent = Math.round((bufferedEnd / duration) * 100);
+                        onProgressCallback(percent, `Loading video: ${percent}%`);
+                    }
+                }
+            };
+
+            const onCanPlayThrough = () => {
+                onProgressCallback(100, 'Video ready');
+                cleanup();
+                resolve();
+            };
+
+            const onError = (e) => {
+                cleanup();
+                reject(new Error('Failed to load video'));
+            };
+
+            const onProgressEvent = () => {
+                updateProgress();
+            };
+
+            const cleanup = () => {
+                video.removeEventListener('canplaythrough', onCanPlayThrough);
+                video.removeEventListener('error', onError);
+                video.removeEventListener('progress', onProgressEvent);
+            };
+
+            video.addEventListener('canplaythrough', onCanPlayThrough, { once: true });
+            video.addEventListener('error', onError, { once: true });
+            video.addEventListener('progress', onProgressEvent);
+
+            // Start loading
+            video.load();
+            updateProgress();
+        });
+    }
+
+    async playIntroVideo(onComplete) {
+        const videoOverlay = document.getElementById('intro-video-overlay');
+        const video = document.getElementById('intro-video');
+        const skipBtn = document.getElementById('skip-video-btn');
+        
+        if (!videoOverlay || !video) {
+            // If video elements don't exist, skip directly to gameplay
+            this.hideLoadingScreen();
+            this.promptPointerLock(onComplete);
+            return;
+        }
+
+        try {
+            // Show loading screen and preload video
+            this.showLoadingScreen();
+            this.updateLoadingProgress(0, 'Loading video...');
+
+            // Preload and buffer the entire video
+            await this.preloadAndBufferVideo(video, (percent, text) => {
+                this.updateLoadingProgress(percent, text);
+            });
+
+            // Small delay to ensure smooth transition
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Hide loading screen and show video
+            this.hideLoadingScreen();
+            videoOverlay.classList.remove('hidden');
+        } catch (error) {
+            console.warn('Video loading failed:', error);
+            this.hideLoadingScreen();
+            this.promptPointerLock(onComplete);
+            return;
+        }
+        
+        // Optimize video playback settings
+        video.playbackRate = 1.0;
+        video.volume = 0;
+        
+        // Function to end video and start game
+        const endVideoAndStart = () => {
+            video.pause();
+            video.currentTime = 0;
+            videoOverlay.classList.add('hidden');
+            // Remove event listeners to prevent double-firing
+            video.removeEventListener('ended', endVideoAndStart);
+            if (skipBtn) {
+                skipBtn.removeEventListener('click', endVideoAndStart);
+            }
+            this.promptPointerLock(onComplete);
+        };
+        
+        // Play video immediately since it's fully buffered
+        video.play().catch(err => {
+            console.warn('Video playback failed:', err);
+            endVideoAndStart();
+        });
+        
+        // When video ends naturally
+        video.addEventListener('ended', endVideoAndStart);
+        
+        // Skip button
+        if (skipBtn) {
+            skipBtn.addEventListener('click', endVideoAndStart);
+        }
     }
 
     showGameScreen() {
@@ -510,7 +705,14 @@ export class UIManager {
     }
 
     onStartClick(callback) {
-        this.startButton.addEventListener('click', callback);
+        // Add click handlers for all level buttons
+        const levelButtons = document.querySelectorAll('.level-btn');
+        levelButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const level = parseInt(button.dataset.level);
+                callback(level);
+            });
+        });
     }
 
     onRestartClick(callback) {
