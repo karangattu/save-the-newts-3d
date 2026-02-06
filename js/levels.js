@@ -70,14 +70,155 @@ export class LevelManager {
         this.splashParticles = [];
     }
     
-    // ==================== LEVEL 1: RAINY ROAD ====================
+    // Helper method to create a flat ribbon geometry following a curve
+    createRibbonGeometry(curve, width, segments = 100) {
+        const vertices = [];
+        const indices = [];
+        const uvs = [];
+        
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const point = curve.getPoint(t);
+            const tangent = curve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            
+            // Create two vertices for left and right edges of the road
+            const leftPoint = point.clone().add(normal.clone().multiplyScalar(-width / 2));
+            const rightPoint = point.clone().add(normal.clone().multiplyScalar(width / 2));
+            
+            vertices.push(leftPoint.x, leftPoint.y, leftPoint.z);
+            vertices.push(rightPoint.x, rightPoint.y, rightPoint.z);
+            
+            // UV coordinates for texture mapping
+            uvs.push(0, t);
+            uvs.push(1, t);
+            
+            // Create triangles (two triangles per road segment)
+            if (i < segments) {
+                const base = i * 2;
+                // First triangle
+                indices.push(base, base + 1, base + 2);
+                // Second triangle
+                indices.push(base + 1, base + 3, base + 2);
+            }
+        }
+        
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        
+        return geometry;
+    }
+    
+    // ==================== LEVEL 1: CLEAR NIGHT (NO RAIN) ====================
     createLevel1() {
+        // Clear night sky
+        this.scene.background = new THREE.Color(0x050510);
+        this.scene.fog = new THREE.FogExp2(0x050510, this.isMobile ? 0.02 : 0.015);
+        
+        this.createLevel1Road();
+        this.createLevel1Environment();
+        // No rain in level 1
+        this.createMoonlight();
+        
+        // Ambient light - slightly brighter since no rain
+        const ambient = new THREE.AmbientLight(0x1a1a2e, 0.3);
+        this.scene.add(ambient);
+        this.levelObjects.push(ambient);
+    }
+    
+    createLevel1Road() {
+        const roadWidth = 12;
+        const roadLength = 280;
+        
+        // Winding curved road - clear night
+        const curvePoints = [
+            new THREE.Vector3(-2, 0, -roadLength/2),
+            new THREE.Vector3(3, 0, -roadLength/2 + 50),
+            new THREE.Vector3(-4, 0, -roadLength/2 + 100),
+            new THREE.Vector3(2, 0, -roadLength/2 + 150),
+            new THREE.Vector3(-3, 0, -roadLength/2 + 200),
+            new THREE.Vector3(1, 0, roadLength/2)
+        ];
+        
+        this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
+        this.roadCurve.tension = 0.5;
+        
+        // Create road as a ribbon geometry (flat surface following the curve)
+        const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 200);
+        const roadMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2a2a2a,
+            roughness: 0.4,
+            metalness: 0.2,
+            side: THREE.DoubleSide
+        });
+        
+        const road = new THREE.Mesh(roadGeometry, roadMaterial);
+        road.position.y = 0.01; // Slightly above ground to prevent z-fighting
+        road.receiveShadow = false; // Disable shadows on road to prevent artifacts
+        this.scene.add(road);
+        this.levelObjects.push(road);
+        
+        this.createRoadMarkings(roadWidth);
+        // No puddles in level 1 (clear night)
+        
+        this.roadBounds = {
+            minX: -35,
+            maxX: 30,
+            minZ: -roadLength/2 + 10,
+            maxZ: roadLength/2 - 10
+        };
+        
+        this.dangerZones = {
+            forest: -12,
+            cliff: 14
+        };
+    }
+    
+    createLevel1Environment() {
+        // Simple grass on both sides - fewer trees for performance
+        const grassGeo = new THREE.PlaneGeometry(80, 280);
+        const grassMat = new THREE.MeshStandardMaterial({ 
+            color: 0x0a1a0a, 
+            roughness: 1.0 
+        });
+        
+        // Left grass
+        const leftGrass = new THREE.Mesh(grassGeo, grassMat);
+        leftGrass.rotation.x = -Math.PI / 2;
+        leftGrass.position.set(-45, -0.01, 0);
+        this.scene.add(leftGrass);
+        this.levelObjects.push(leftGrass);
+        
+        // Right grass
+        const rightGrass = new THREE.Mesh(grassGeo, grassMat);
+        rightGrass.rotation.x = -Math.PI / 2;
+        rightGrass.position.set(45, -0.01, 0);
+        this.scene.add(rightGrass);
+        this.levelObjects.push(rightGrass);
+        
+        // Cliff on right side
+        this.createCliff();
+        
+        // Fewer trees than level 2 for performance
+        this.createTrees(this.isMobile ? 40 : 80, -1); // Left side only
+        
+        // Warning signs along cliff edge
+        for (let z = -120; z <= 120; z += 40) {
+            this.createWarningSign(20, z);
+        }
+    }
+    
+    // ==================== LEVEL 2: RAINY ROAD ====================
+    createLevel2() {
         // Dark rainy night sky
         this.scene.background = new THREE.Color(0x030308);
         this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.06 : 0.05);
         
-        this.createLevel1Road();
-        this.createLevel1Environment();
+        this.createLevel2Road();
+        this.createLevel2Environment();
         this.createRain();
         this.createMoonlight();
         
@@ -87,7 +228,7 @@ export class LevelManager {
         this.levelObjects.push(ambient);
     }
     
-    createLevel1Road() {
+    createLevel2Road() {
         const roadWidth = 12;
         const roadLength = 280;
         
@@ -104,35 +245,22 @@ export class LevelManager {
         this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
         this.roadCurve.tension = 0.5;
         
-        // Road mesh
-        const roadShape = new THREE.Shape();
-        roadShape.moveTo(-roadWidth/2, 0);
-        roadShape.lineTo(roadWidth/2, 0);
-        roadShape.lineTo(roadWidth/2, 1);
-        roadShape.lineTo(-roadWidth/2, 1);
-        roadShape.lineTo(-roadWidth/2, 0);
-        
-        const extrudeSettings = {
-            steps: 100,
-            extrudePath: this.roadCurve,
-            bevelEnabled: false
-        };
-        
-        const roadGeometry = new THREE.ExtrudeGeometry(roadShape, extrudeSettings);
+        // Create road as a ribbon geometry (flat surface following the curve)
+        const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 200);
         const roadMaterial = new THREE.MeshStandardMaterial({
             color: 0x1a1a1a,
             roughness: 0.3,
-            metalness: 0.4
+            metalness: 0.4,
+            side: THREE.DoubleSide
         });
         
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
-        road.rotation.x = -Math.PI / 2;
+        road.position.y = 0.01; // Slightly above ground to prevent z-fighting
         road.receiveShadow = true;
         this.scene.add(road);
         this.levelObjects.push(road);
         
         this.createRoadMarkings(roadWidth);
-        this.createPuddles();
         
         this.roadBounds = {
             minX: -35,
@@ -141,13 +269,14 @@ export class LevelManager {
             maxZ: roadLength/2 - 10
         };
         
+        // Same danger zones
         this.dangerZones = {
             forest: -12,
             cliff: 14
         };
     }
     
-    createLevel1Environment() {
+    createLevel2Environment() {
         // Forest floor (left)
         const forestFloor = new THREE.Mesh(
             new THREE.PlaneGeometry(60, 280),
@@ -201,117 +330,9 @@ export class LevelManager {
         for (let z = -120; z <= 120; z += 40) {
             this.createWarningSign(20, z);
         }
-    }
-    
-    // ==================== LEVEL 2: CLEAR NIGHT (NO RAIN) ====================
-    createLevel2() {
-        // Clear night sky - darker and clearer
-        this.scene.background = new THREE.Color(0x050510);
-        this.scene.fog = new THREE.FogExp2(0x050510, this.isMobile ? 0.04 : 0.025);
         
-        this.createLevel2Road();
-        this.createLevel2Environment();
-        // No rain - clear night
-        this.createMoonlight();
-        
-        // Ambient light - slightly brighter than level 1 since no rain
-        const ambient = new THREE.AmbientLight(0x1a1a2e, 0.2);
-        this.scene.add(ambient);
-        this.levelObjects.push(ambient);
-    }
-    
-    createLevel2Road() {
-        const roadWidth = 12;
-        const roadLength = 280;
-        
-        // Different winding pattern than level 1 - more S-curves
-        const curvePoints = [
-            new THREE.Vector3(-2, 0, -roadLength/2),
-            new THREE.Vector3(3, 0, -roadLength/2 + 50),
-            new THREE.Vector3(-4, 0, -roadLength/2 + 100),
-            new THREE.Vector3(2, 0, -roadLength/2 + 150),
-            new THREE.Vector3(-3, 0, -roadLength/2 + 200),
-            new THREE.Vector3(1, 0, roadLength/2)
-        ];
-        
-        this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
-        this.roadCurve.tension = 0.5;
-        
-        // Road mesh - same as level 1
-        const roadShape = new THREE.Shape();
-        roadShape.moveTo(-roadWidth/2, 0);
-        roadShape.lineTo(roadWidth/2, 0);
-        roadShape.lineTo(roadWidth/2, 1);
-        roadShape.lineTo(-roadWidth/2, 1);
-        roadShape.lineTo(-roadWidth/2, 0);
-        
-        const extrudeSettings = {
-            steps: 100,
-            extrudePath: this.roadCurve,
-            bevelEnabled: false
-        };
-        
-        const roadGeometry = new THREE.ExtrudeGeometry(roadShape, extrudeSettings);
-        const roadMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a1a,
-            roughness: 0.3,
-            metalness: 0.4
-        });
-        
-        const road = new THREE.Mesh(roadGeometry, roadMaterial);
-        road.rotation.x = -Math.PI / 2;
-        road.receiveShadow = true;
-        this.scene.add(road);
-        this.levelObjects.push(road);
-        
-        this.createRoadMarkings(roadWidth);
-        
-        this.roadBounds = {
-            minX: -35,
-            maxX: 30,
-            minZ: -roadLength/2 + 10,
-            maxZ: roadLength/2 - 10
-        };
-        
-        // Same danger zones as level 1
-        this.dangerZones = {
-            forest: -12,
-            cliff: 14
-        };
-    }
-    
-    createLevel2Environment() {
-        // Simple grass on both sides - fewer trees for performance
-        const grassGeo = new THREE.PlaneGeometry(80, 280);
-        const grassMat = new THREE.MeshStandardMaterial({ 
-            color: 0x0a1a0a, 
-            roughness: 1.0 
-        });
-        
-        // Left grass
-        const leftGrass = new THREE.Mesh(grassGeo, grassMat);
-        leftGrass.rotation.x = -Math.PI / 2;
-        leftGrass.position.set(-45, -0.01, 0);
-        this.scene.add(leftGrass);
-        this.levelObjects.push(leftGrass);
-        
-        // Right grass
-        const rightGrass = new THREE.Mesh(grassGeo, grassMat);
-        rightGrass.rotation.x = -Math.PI / 2;
-        rightGrass.position.set(45, -0.01, 0);
-        this.scene.add(rightGrass);
-        this.levelObjects.push(rightGrass);
-        
-        // Cliff on right side
-        this.createCliff();
-        
-        // Fewer trees than level 1 for performance
-        this.createTrees(this.isMobile ? 40 : 80, -1); // Left side only
-        
-        // Warning signs along cliff edge
-        for (let z = -120; z <= 120; z += 40) {
-            this.createWarningSign(20, z);
-        }
+        // Create puddles for rainy level
+        this.createPuddles();
     }
     
     createCliff() {
@@ -548,11 +569,24 @@ export class LevelManager {
     }
     
     createMoonlight() {
-        const moonlight = new THREE.DirectionalLight(0x6666aa, 0.08);
+        const moonlight = new THREE.DirectionalLight(0x6666aa, 0.12);
         moonlight.position.set(20, 50, 10);
         moonlight.castShadow = true;
-        moonlight.shadow.mapSize.width = 512;
-        moonlight.shadow.mapSize.height = 512;
+        moonlight.shadow.mapSize.width = 1024;
+        moonlight.shadow.mapSize.height = 1024;
+        
+        // Configure shadow camera to cover the road area properly
+        const d = 150;
+        moonlight.shadow.camera.left = -d;
+        moonlight.shadow.camera.right = d;
+        moonlight.shadow.camera.top = d;
+        moonlight.shadow.camera.bottom = -d;
+        moonlight.shadow.camera.near = 0.5;
+        moonlight.shadow.camera.far = 200;
+        
+        // Reduce shadow bias to prevent artifacts
+        moonlight.shadow.bias = -0.001;
+        
         this.scene.add(moonlight);
         this.levelObjects.push(moonlight);
     }
@@ -600,7 +634,7 @@ export class LevelManager {
         const count = positions.length / 3;
         
         for (let i = 0; i < count; i++) {
-            if (this.currentLevel === 1) {
+            if (this.currentLevel === 2) {
                 // Rain falls down
                 positions[i * 3 + 1] -= this.rainVelocities[i] * deltaTime * 30;
                 positions[i * 3] += deltaTime * 2; // Wind
@@ -611,18 +645,9 @@ export class LevelManager {
                     positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 100;
                 }
             } else {
-                // Dust floats and drifts
-                positions[i * 3 + 1] += Math.sin(Date.now() * 0.001 + i) * 0.01;
-                positions[i * 3] += deltaTime * 0.5;
-                positions[i * 3 + 2] += deltaTime * 0.3;
-                
-                // Wrap around
-                if (positions[i * 3] > cameraPosition.x + 40) {
-                    positions[i * 3] = cameraPosition.x - 40;
-                }
-                if (positions[i * 3 + 2] > cameraPosition.z + 50) {
-                    positions[i * 3 + 2] = cameraPosition.z - 50;
-                }
+                // Level 1 - no rain particles
+                // Just hide them below ground
+                positions[i * 3 + 1] = -100;
             }
         }
         
@@ -630,7 +655,7 @@ export class LevelManager {
     }
     
     createSplashParticle(x, z) {
-        if (this.currentLevel !== 1) return; // No splashes in level 2
+        if (this.currentLevel !== 2) return; // Only splashes in level 2 (rainy)
         
         const maxSplashes = this.isMobile ? 30 : 60;
         
@@ -663,7 +688,7 @@ export class LevelManager {
     }
     
     updateSplashes(deltaTime, cameraPosition) {
-        if (this.currentLevel !== 1) {
+        if (this.currentLevel !== 2) {
             // Clear any existing splashes when switching levels
             this.splashParticles.forEach(splash => this.scene.remove(splash));
             this.splashParticles = [];

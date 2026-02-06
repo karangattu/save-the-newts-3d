@@ -1267,3 +1267,143 @@ button:hover {
         font-size: 1.5rem;
     }
 }
+
+/* Video Screen */
+#video-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 120;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#video-screen.hidden {
+    display: none;
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#game-intro-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+.skip-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    border-radius: 25px;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 10;
+    backdrop-filter: blur(5px);
+}
+
+.skip-button:hover {
+    background: rgba(255, 215, 0, 0.8);
+    border-color: #ffd700;
+    color: #000;
+    transform: scale(1.05);
+}
+
+.skip-button i {
+    margin-right: 5px;
+}
+
+/* Mobile adjustments for video screen */
+@media (max-width: 768px) {
+    .skip-button {
+        top: 10px;
+        right: 10px;
+        padding: 8px 15px;
+        font-size: 0.8rem;
+    }
+}
+
+/* Click to Start Screen */
+#click-to-start-screen {
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 130;
+    cursor: pointer;
+}
+
+#click-to-start-screen.hidden {
+    display: none;
+}
+
+.click-to-start-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.click-prompt {
+    text-align: center;
+    animation: pulse-click 2s ease-in-out infinite;
+}
+
+.click-prompt i {
+    font-size: 4rem;
+    color: #ffd700;
+    margin-bottom: 20px;
+    display: block;
+}
+
+.click-prompt h2 {
+    font-size: 2.5rem;
+    color: #fff;
+    margin: 0 0 15px 0;
+    text-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+}
+
+.click-prompt p {
+    font-size: 1.1rem;
+    color: #888;
+    margin: 0;
+}
+
+@keyframes pulse-click {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 0.8;
+    }
+}
+
+/* Mobile adjustments for click to start */
+@media (max-width: 768px) {
+    .click-prompt i {
+        font-size: 3rem;
+    }
+    
+    .click-prompt h2 {
+        font-size: 1.8rem;
+    }
+    
+    .click-prompt p {
+        font-size: 0.95rem;
+    }
+}

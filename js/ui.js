@@ -70,6 +70,12 @@ export class UIManager {
         // Create loading screen
         this.createLoadingScreen();
 
+        // Create video screen
+        this.createVideoScreen();
+
+        // Create click to start screen
+        this.createClickToStartScreen();
+
         // Load saved player name
         const savedName = localStorage.getItem('newtRescuePlayerName');
         if (savedName && this.playerNameInput) {
@@ -128,6 +134,110 @@ export class UIManager {
         this.loadingText = document.getElementById('loading-text');
     }
 
+    createClickToStartScreen() {
+        const clickScreen = document.createElement('div');
+        clickScreen.id = 'click-to-start-screen';
+        clickScreen.className = 'overlay hidden';
+        clickScreen.innerHTML = `
+            <div class="overlay-content click-to-start-content">
+                <div class="click-prompt">
+                    <i class="fas fa-hand-pointer"></i>
+                    <h2>Click to Start</h2>
+                    <p>Click anywhere to begin the rescue mission</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(clickScreen);
+        this.clickToStartScreen = clickScreen;
+        
+        // Add click handler
+        clickScreen.addEventListener('click', () => {
+            this.hideClickToStartScreen();
+            if (this.onClickToStartCallback) {
+                this.onClickToStartCallback();
+            }
+        });
+    }
+
+    showClickToStartScreen() {
+        this.clickToStartScreen.classList.remove('hidden');
+        this.hideLoadingScreen();
+    }
+
+    hideClickToStartScreen() {
+        this.clickToStartScreen.classList.add('hidden');
+    }
+
+    onClickToStart(callback) {
+        this.onClickToStartCallback = callback;
+    }
+
+    createVideoScreen() {
+        const videoScreen = document.createElement('div');
+        videoScreen.id = 'video-screen';
+        videoScreen.className = 'overlay hidden';
+        videoScreen.innerHTML = `
+            <div class="video-container">
+                <video id="game-intro-video" playsinline preload="metadata">
+                    <source src="assets/game_start_video.mp4" type="video/mp4">
+                </video>
+                <button id="skip-video-btn" class="skip-button">
+                    <i class="fas fa-forward"></i> Skip
+                </button>
+            </div>
+        `;
+        document.body.appendChild(videoScreen);
+        this.videoScreen = videoScreen;
+        this.videoElement = document.getElementById('game-intro-video');
+        this.skipVideoBtn = document.getElementById('skip-video-btn');
+        
+        // Skip button event
+        this.skipVideoBtn.addEventListener('click', () => {
+            this.hideVideoScreen();
+            if (this.onVideoCompleteCallback) {
+                this.onVideoCompleteCallback();
+            }
+        });
+    }
+
+    showVideoScreen() {
+        this.videoScreen.classList.remove('hidden');
+        this.hideStartScreen();
+        
+        // Play the video
+        this.videoElement.currentTime = 0;
+        const playPromise = this.videoElement.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                // Auto-play was prevented, skip to loading
+                console.log('Video autoplay prevented:', error);
+                this.hideVideoScreen();
+                if (this.onVideoCompleteCallback) {
+                    this.onVideoCompleteCallback();
+                }
+            });
+        }
+        
+        // Listen for video end
+        this.videoElement.onended = () => {
+            this.hideVideoScreen();
+            if (this.onVideoCompleteCallback) {
+                this.onVideoCompleteCallback();
+            }
+        };
+    }
+
+    hideVideoScreen() {
+        this.videoScreen.classList.add('hidden');
+        this.videoElement.pause();
+        this.videoElement.currentTime = 0;
+    }
+
+    onVideoComplete(callback) {
+        this.onVideoCompleteCallback = callback;
+    }
+
     showLoadingScreen(text = 'Loading...') {
         this.loadingText.textContent = text;
         this.loadingScreen.classList.remove('hidden');
@@ -153,11 +263,11 @@ export class UIManager {
         let levelDescription = '';
         
         if (level === 1) {
-            levelName = 'Rainy Road';
+            levelName = 'Clear Night';
             levelDescription = 'Watch out for the cliff and forest predators!';
         } else if (level === 2) {
-            levelName = 'Clear Night';
-            levelDescription = 'Same dangers, different curves, no rain!';
+            levelName = 'Rainy Road';
+            levelDescription = 'Same dangers, different curves, now with rain!';
         }
         
         message.innerHTML = `

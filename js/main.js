@@ -143,8 +143,14 @@ class Game {
     }
 
     setupEventListeners() {
-        // Start button
-        this.ui.onStartClick(() => this.startGame());
+        // Start button - now shows video first
+        this.ui.onStartClick(() => this.showIntroVideo());
+
+        // Video complete callback
+        this.ui.onVideoComplete(() => this.startGameWithLoading());
+
+        // Click to start callback
+        this.ui.onClickToStart(() => this.finalizeGameStart());
 
         // Restart button
         this.ui.onRestartClick(() => this.restartGame());
@@ -175,7 +181,23 @@ class Game {
         });
     }
 
-    startGame() {
+    showIntroVideo() {
+        // Show the intro video screen
+        this.ui.showVideoScreen();
+    }
+
+    async startGameWithLoading() {
+        // Show loading screen
+        this.ui.showLoadingScreen('Loading Game...');
+
+        // Small delay for loading screen to render
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // Show click to start screen (allows proper pointer lock on desktop)
+        this.ui.showClickToStartScreen();
+    }
+
+    finalizeGameStart() {
         // Initialize audio context (requires user interaction)
         this.audioManager.init();
 
@@ -195,9 +217,7 @@ class Game {
         this.lastTime = performance.now() / 1000;
 
         // Update UI
-        this.ui.hideStartScreen();
         this.ui.hideGameOver();
-        this.ui.showGameScreen();
         this.ui.updateBattery(100);
         this.ui.updateScore(0);
         this.ui.updateTime(0);
@@ -215,7 +235,7 @@ class Game {
         // Start ambient sounds
         this.audioManager.startAmbient();
 
-        // Lock pointer (desktop only)
+        // Lock pointer (desktop only) - this MUST happen within user gesture
         if (!this.isMobile) {
             this.player.lock();
         }
@@ -224,7 +244,12 @@ class Game {
         this.state = 'playing';
     }
 
-    restartGame() {
+    async startGame() {
+        // This is called for restarting after game over - need full flow
+        await this.startGameWithLoading();
+    }
+
+    async restartGame() {
         // Reset to level 1
         this.currentLevel = 1;
         this.levelScore = 0;
@@ -242,7 +267,8 @@ class Game {
         this.newtManager.setRoadCurve(this.roadCurve);
         this.carManager.setRoadCurve(this.roadCurve);
 
-        this.startGame();
+        // Show loading screen and then click to start
+        await this.startGameWithLoading();
     }
 
     async loadNextLevel() {
