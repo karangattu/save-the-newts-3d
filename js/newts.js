@@ -26,7 +26,7 @@ export class NewtManager {
         // Rescue celebration particles
         this.rescueEffects = [];
     }
-    
+
     setRoadCurve(roadCurve) {
         this.roadCurve = roadCurve;
     }
@@ -68,21 +68,24 @@ export class NewtManager {
         head.position.set(0.4, 0.12, 0);
         group.add(head);
 
-        // Simple eyes
+        // Eyes - no emissive glow by default, only visible when flashlight hits them
         const eyeGeometry = new THREE.SphereGeometry(0.04, 6, 6);
         const eyeMaterial = new THREE.MeshStandardMaterial({
-            color: 0xDDAA20,
-            emissive: 0x886600,
-            emissiveIntensity: 0.4
+            color: 0x222200,
+            emissive: 0x000000,
+            emissiveIntensity: 0
         });
 
-        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
         leftEye.position.set(0.45, 0.18, 0.08);
         group.add(leftEye);
 
-        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
         rightEye.position.set(0.45, 0.18, -0.08);
         group.add(rightEye);
+
+        // Store eye references for illumination effect
+        group.userData.eyes = { left: leftEye, right: rightEye };
 
         // === SIMPLIFIED TAIL - single cone instead of segments ===
         const tailGeometry = new THREE.ConeGeometry(0.12, 0.6, 6);
@@ -133,17 +136,17 @@ export class NewtManager {
         // Random spawn position at road edge along the curved road
         const side = Math.random() > 0.5 ? 1 : -1;
         const z = (Math.random() - 0.5) * (this.roadLength - 60);
-        
+
         let startPosition, targetPosition, roadNormal;
-        
+
         if (this.roadCurve) {
             const roadData = this.getRoadDataAtZ(z);
             const roadCenter = roadData.point;
             roadNormal = roadData.normal;
-            
+
             const edgeOffset = roadNormal.clone().multiplyScalar(side * (this.roadWidth / 2 + 2));
             startPosition = roadCenter.clone().add(edgeOffset);
-            
+
             const targetOffset = roadNormal.clone().multiplyScalar(-side * (this.roadWidth / 2 + 2));
             targetPosition = roadCenter.clone().add(targetOffset);
         } else {
@@ -176,7 +179,7 @@ export class NewtManager {
 
         this.newts.push(newt);
     }
-    
+
     getRoadDataAtZ(z) {
         if (!this.roadCurve) {
             return {
@@ -185,10 +188,10 @@ export class NewtManager {
                 normal: new THREE.Vector3(1, 0, 0)
             };
         }
-        
+
         let closestT = 0;
         let minZDiff = Infinity;
-        
+
         for (let i = 0; i <= 100; i++) {
             const t = i / 100;
             const point = this.roadCurve.getPoint(t);
@@ -198,11 +201,11 @@ export class NewtManager {
                 closestT = t;
             }
         }
-        
+
         const point = this.roadCurve.getPoint(closestT);
         const tangent = this.roadCurve.getTangent(closestT);
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-        
+
         return { point, tangent, normal, t: closestT };
     }
 
@@ -243,11 +246,11 @@ export class NewtManager {
                 const moveDir = new THREE.Vector3().subVectors(newt.targetPosition, newt.mesh.position);
                 const distanceToTarget = moveDir.length();
                 moveDir.normalize();
-                
+
                 const moveDistance = newt.speed * deltaTime;
                 newt.mesh.position.add(moveDir.clone().multiplyScalar(moveDistance));
                 newt.walkCycle += deltaTime * newt.speed * 12;
-                
+
                 if (distanceToTarget < 0.5 || newt.mesh.position.distanceTo(newt.startPosition) > newt.startPosition.distanceTo(newt.targetPosition)) {
                     this.scene.remove(newt.mesh);
                     this.newts.splice(i, 1);
@@ -270,6 +273,26 @@ export class NewtManager {
             newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.5) * 0.002;
 
             newt.isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
+
+            // Update eye glow based on flashlight illumination
+            const eyes = newt.mesh.userData.eyes;
+            if (eyes) {
+                if (newt.isIlluminated) {
+                    eyes.left.material.color.setHex(0xDDAA20);
+                    eyes.left.material.emissive.setHex(0xFFCC00);
+                    eyes.left.material.emissiveIntensity = 0.8;
+                    eyes.right.material.color.setHex(0xDDAA20);
+                    eyes.right.material.emissive.setHex(0xFFCC00);
+                    eyes.right.material.emissiveIntensity = 0.8;
+                } else {
+                    eyes.left.material.color.setHex(0x222200);
+                    eyes.left.material.emissive.setHex(0x000000);
+                    eyes.left.material.emissiveIntensity = 0;
+                    eyes.right.material.color.setHex(0x222200);
+                    eyes.right.material.emissive.setHex(0x000000);
+                    eyes.right.material.emissiveIntensity = 0;
+                }
+            }
 
             if (newt.isIlluminated) {
                 newt.illuminationTime += deltaTime;
