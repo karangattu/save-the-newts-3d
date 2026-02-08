@@ -285,10 +285,17 @@ class Game {
         this.totalScore += this.levelScore;
         this.levelScore = 0;
 
-        // Endless mode: after level 2, continue on same scene with escalating difficulty
-        if (this.currentLevel > 2) {
-            const wave = this.currentLevel - 2;
-            this.newtsForNextLevel = 3 + wave * 2;
+        // Set newt requirements per level
+        if (this.currentLevel === 2) {
+            this.newtsForNextLevel = 5;
+        } else if (this.currentLevel === 3) {
+            this.newtsForNextLevel = 8;
+        }
+
+        // Endless mode: after level 3, continue on same scene with escalating difficulty
+        if (this.currentLevel > 3) {
+            const wave = this.currentLevel - 3;
+            this.newtsForNextLevel = 8 + wave * 3;
             this.carManager.setDifficultyMultiplier(1 + wave * 0.15);
             this.newtManager.setSpeedMultiplier(1 + wave * 0.1);
             this.flashlight.setExternalDrainMultiplier(1 + wave * 0.1);
@@ -311,7 +318,7 @@ class Game {
             return;
         }
 
-        // Normal level transition (level 1 -> 2)
+        // Normal level transition (level 1->2, 2->3)
         // Show loading screen
         this.ui.showLoadingScreen(`Loading Level ${this.currentLevel}...`);
 
@@ -422,6 +429,9 @@ class Game {
         // Update rain/dust and splashes through level manager
         this.levelManager.updateRain(deltaTime, this.player.getPosition());
         this.levelManager.updateSplashes(deltaTime, this.player.getPosition());
+
+        // Update moths
+        this.levelManager.updateMoths(deltaTime);
 
         // Update player
         const isMoving = this.player.update(deltaTime);

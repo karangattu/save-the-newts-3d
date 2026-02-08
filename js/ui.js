@@ -251,8 +251,8 @@ export class UIManager {
 
     updateLevel(level) {
         if (this.levelNumberElement) {
-            if (level > 2) {
-                this.levelNumberElement.textContent = `Wave ${level - 2}`;
+            if (level > 3) {
+                this.levelNumberElement.textContent = `Wave ${level - 3}`;
             } else {
                 this.levelNumberElement.textContent = level;
             }
@@ -269,14 +269,18 @@ export class UIManager {
         let badge = '';
         if (level === 1) {
             levelName = 'Clear Night';
-            levelDescription = 'Watch out for the cliff and forest predators!';
+            levelDescription = 'Guide newts across Alma Bridge Road under the stars.';
             badge = 'LEVEL 1';
         } else if (level === 2) {
-            levelName = 'Rainy Road';
-            levelDescription = 'Same dangers, different curves, now with rain!';
+            levelName = 'Twilight Road';
+            levelDescription = 'Dusk falls on the reservoir — owls are watching.';
             badge = 'LEVEL 2';
+        } else if (level === 3) {
+            levelName = 'Storm Road';
+            levelDescription = 'Rain and wind batter the road — visibility is low!';
+            badge = 'LEVEL 3';
         } else {
-            const wave = level - 2;
+            const wave = level - 3;
             levelName = 'Endless';
             levelDescription = `Wave ${wave} - More newts needed, faster traffic, quicker drain!`;
             badge = `WAVE ${wave}`;

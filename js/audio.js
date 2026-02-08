@@ -35,21 +35,180 @@ export class AudioManager {
         this.isInitialized = true;
     }
     
-    startAmbient(level = 2) {
+    startAmbient(level = 1) {
         if (!this.isInitialized) return;
-        // Debug: report which ambient is starting (helps QA)
         console.log("AudioManager.startAmbient() - level:", level);
 
-        // Wind - low frequency filtered noise (both levels)
-        this.createWindSound();
+        // Wind - low frequency filtered noise (all levels, louder in storm)
+        this.createWindSound(level === 3 ? 0.12 : 0.05);
 
-        // Cricket chirps (more frequent in clear night)
-        this.startCrickets(level === 1);
-
-        // Rain sound only for level 2
-        if (level === 2) {
-            this.createRainSound();
+        // Cricket chirps (more frequent in clear night, fewer at dusk, none in storm)
+        if (level <= 2) {
+            this.startCrickets(level === 1);
         }
+
+        // Level 1: Frog croaking (Pacific tree frogs - realistic for SF area)
+        if (level === 1) {
+            this.startFrogCroaking();
+        }
+
+        // Level 2: Dusk ambient - owl hoots and distant coyotes
+        if (level === 2) {
+            this.startDuskAmbient();
+        }
+
+        // Level 3: Rain and storm
+        if (level === 3) {
+            this.createRainSound();
+            this.createStormWind();
+        }
+    }
+    
+    startFrogCroaking() {
+        if (!this.isInitialized) return;
+        // Pacific tree frog "ribbit" - the iconic sound near Lexington Reservoir
+        this.frogInterval = setInterval(() => {
+            if (Math.random() < 0.4) {
+                this.playFrogCroak();
+            }
+        }, 1200);
+    }
+    
+    playFrogCroak() {
+        if (!this.isInitialized) return;
+        const now = this.audioContext.currentTime;
+        
+        // Two-tone "rib-bit" pattern
+        const osc1 = this.audioContext.createOscillator();
+        osc1.type = 'sine';
+        const baseFreq = 800 + Math.random() * 400;
+        osc1.frequency.setValueAtTime(baseFreq, now);
+        osc1.frequency.linearRampToValueAtTime(baseFreq * 1.2, now + 0.06);
+        osc1.frequency.linearRampToValueAtTime(baseFreq * 0.8, now + 0.12);
+        
+        // Second tone (the "bit")
+        const osc2 = this.audioContext.createOscillator();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(baseFreq * 1.3, now + 0.15);
+        osc2.frequency.linearRampToValueAtTime(baseFreq * 1.1, now + 0.25);
+        
+        const gain1 = this.audioContext.createGain();
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.04, now + 0.02);
+        gain1.gain.linearRampToValueAtTime(0.04, now + 0.1);
+        gain1.gain.linearRampToValueAtTime(0, now + 0.13);
+        
+        const gain2 = this.audioContext.createGain();
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.setValueAtTime(0, now + 0.14);
+        gain2.gain.linearRampToValueAtTime(0.035, now + 0.17);
+        gain2.gain.linearRampToValueAtTime(0.035, now + 0.22);
+        gain2.gain.linearRampToValueAtTime(0, now + 0.28);
+        
+        // Slight distortion for organic feel
+        const filter = this.audioContext.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = baseFreq;
+        filter.Q.value = 3;
+        
+        osc1.connect(gain1);
+        gain1.connect(filter);
+        osc2.connect(gain2);
+        gain2.connect(filter);
+        filter.connect(this.masterGain);
+        
+        osc1.start(now);
+        osc1.stop(now + 0.15);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.3);
+    }
+    
+    startDuskAmbient() {
+        if (!this.isInitialized) return;
+        // Occasional owl hoot
+        this.owlInterval = setInterval(() => {
+            if (Math.random() < 0.08) {
+                this.playOwlHoot();
+            }
+        }, 6000);
+    }
+    
+    playOwlHoot() {
+        if (!this.isInitialized) return;
+        const now = this.audioContext.currentTime;
+        
+        // Great horned owl "hoo-hoo-hooo" - common in Santa Cruz Mtns
+        const osc = this.audioContext.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.linearRampToValueAtTime(260, now + 0.3);
+        osc.frequency.setValueAtTime(280, now + 0.5);
+        osc.frequency.linearRampToValueAtTime(250, now + 0.9);
+        osc.frequency.setValueAtTime(270, now + 1.1);
+        osc.frequency.linearRampToValueAtTime(220, now + 1.8);
+        
+        const gain = this.audioContext.createGain();
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.025, now + 0.05);
+        gain.gain.linearRampToValueAtTime(0.02, now + 0.25);
+        gain.gain.linearRampToValueAtTime(0, now + 0.35);
+        gain.gain.linearRampToValueAtTime(0.025, now + 0.5);
+        gain.gain.linearRampToValueAtTime(0.02, now + 0.8);
+        gain.gain.linearRampToValueAtTime(0, now + 0.95);
+        gain.gain.linearRampToValueAtTime(0.03, now + 1.1);
+        gain.gain.linearRampToValueAtTime(0.015, now + 1.7);
+        gain.gain.linearRampToValueAtTime(0, now + 2.0);
+        
+        const filter = this.audioContext.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 400;
+        
+        osc.connect(gain);
+        gain.connect(filter);
+        filter.connect(this.masterGain);
+        
+        osc.start(now);
+        osc.stop(now + 2.0);
+    }
+    
+    createStormWind() {
+        if (!this.isInitialized) return;
+        // Howling wind gusts for level 3
+        const bufferSize = 2 * this.audioContext.sampleRate;
+        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+        }
+        
+        const windNoise = this.audioContext.createBufferSource();
+        windNoise.buffer = noiseBuffer;
+        windNoise.loop = true;
+        
+        const bandPass = this.audioContext.createBiquadFilter();
+        bandPass.type = 'bandpass';
+        bandPass.frequency.value = 400;
+        bandPass.Q.value = 1.5;
+        
+        // LFO for wind gusts
+        const lfo = this.audioContext.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.15;
+        const lfoGain = this.audioContext.createGain();
+        lfoGain.gain.value = 0.08;
+        lfo.connect(lfoGain);
+        
+        const windGain = this.audioContext.createGain();
+        windGain.gain.value = 0.1;
+        lfoGain.connect(windGain.gain);
+        
+        windNoise.connect(bandPass);
+        bandPass.connect(windGain);
+        windGain.connect(this.masterGain);
+        
+        windNoise.start();
+        lfo.start();
+        this.ambientNodes.push(windNoise, lfo);
     }
     
     createRainSound() {
@@ -132,10 +291,10 @@ export class AudioManager {
         thunderSource.start(now);
     }
     
-    createWindSound() {
+    createWindSound(volume = 0.05) {
         // Create noise using oscillator modulation
         const noiseGain = this.audioContext.createGain();
-        noiseGain.gain.value = 0.05;
+        noiseGain.gain.value = volume;
         noiseGain.connect(this.masterGain);
         
         // Low frequency oscillator for wind effect
@@ -874,6 +1033,18 @@ export class AudioManager {
         if (this.cricketInterval) {
             clearInterval(this.cricketInterval);
             this.cricketInterval = null;
+        }
+        
+        // Stop frog interval
+        if (this.frogInterval) {
+            clearInterval(this.frogInterval);
+            this.frogInterval = null;
+        }
+        
+        // Stop owl interval
+        if (this.owlInterval) {
+            clearInterval(this.owlInterval);
+            this.owlInterval = null;
         }
         
         // Stop thunder interval
