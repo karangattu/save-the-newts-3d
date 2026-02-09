@@ -41,7 +41,7 @@ export class UIManager {
 
         // Flashlight toggle callback
         this.onFlashlightToggleCallback = null;
-        
+
         // Setup flashlight toggle button for mobile
         if (this.flashlightToggleBtn) {
             this.flashlightToggleBtn.addEventListener('click', () => {
@@ -149,7 +149,7 @@ export class UIManager {
         `;
         document.body.appendChild(clickScreen);
         this.clickToStartScreen = clickScreen;
-        
+
         // Add click handler
         clickScreen.addEventListener('click', () => {
             this.hideClickToStartScreen();
@@ -190,7 +190,7 @@ export class UIManager {
         this.videoScreen = videoScreen;
         this.videoElement = document.getElementById('game-intro-video');
         this.skipVideoBtn = document.getElementById('skip-video-btn');
-        
+
         // Skip button event
         this.skipVideoBtn.addEventListener('click', () => {
             this.hideVideoScreen();
@@ -203,11 +203,11 @@ export class UIManager {
     showVideoScreen() {
         this.videoScreen.classList.remove('hidden');
         this.hideStartScreen();
-        
+
         // Play the video
         this.videoElement.currentTime = 0;
         const playPromise = this.videoElement.play();
-        
+
         if (playPromise !== undefined) {
             playPromise.catch(error => {
                 // Auto-play was prevented, skip to loading
@@ -218,7 +218,7 @@ export class UIManager {
                 }
             });
         }
-        
+
         // Listen for video end
         this.videoElement.onended = () => {
             this.hideVideoScreen();
@@ -262,30 +262,36 @@ export class UIManager {
     showLevelStartMessage(level) {
         const message = document.createElement('div');
         message.id = 'level-start-message';
-        
+
         let levelName = '';
         let levelDescription = '';
-        
         let badge = '';
+        let levelClass = '';
+
         if (level === 1) {
             levelName = 'Clear Night';
             levelDescription = 'Guide newts across Alma Bridge Road under the stars.';
-            badge = 'LEVEL 1';
+            badge = 'Level 01';
+            levelClass = 'level-1';
         } else if (level === 2) {
             levelName = 'Twilight Road';
             levelDescription = 'Dusk falls on the reservoir — owls are watching.';
-            badge = 'LEVEL 2';
+            badge = 'Level 02';
+            levelClass = 'level-2';
         } else if (level === 3) {
             levelName = 'Storm Road';
             levelDescription = 'Rain and wind batter the road — visibility is low!';
-            badge = 'LEVEL 3';
+            badge = 'Level 03';
+            levelClass = 'level-3';
         } else {
             const wave = level - 3;
-            levelName = 'Endless';
-            levelDescription = `Wave ${wave} - More newts needed, faster traffic, quicker drain!`;
-            badge = `WAVE ${wave}`;
+            levelName = 'Endless Mode';
+            levelDescription = `Wave ${wave} - Survival is the only goal.`;
+            badge = `Wave ${wave.toString().padStart(2, '0')}`;
+            levelClass = 'wave';
         }
 
+        message.className = levelClass;
         message.innerHTML = `
             <div class="level-start-content">
                 <div class="level-badge">${badge}</div>
@@ -294,15 +300,15 @@ export class UIManager {
             </div>
         `;
         document.body.appendChild(message);
-        
+
         // Animate in
         setTimeout(() => message.classList.add('show'), 50);
-        
+
         // Remove after delay
         setTimeout(() => {
             message.classList.remove('show');
             setTimeout(() => message.remove(), 500);
-        }, 3000);
+        }, 3600);
     }
 
     showRescueFeedback() {

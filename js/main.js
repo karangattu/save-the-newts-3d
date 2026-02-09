@@ -240,6 +240,9 @@ class Game {
             this.player.lock();
         }
 
+        // Show level start poster
+        this.ui.showLevelStartMessage(this.currentLevel);
+
         // Set state
         this.state = 'playing';
     }
