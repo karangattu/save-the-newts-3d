@@ -31,6 +31,7 @@ export class LevelManager {
 
         // Moths (SF-realistic, not fireflies)
         this.moths = [];
+        this.mothUpdateFrame = 0;
     }
     
     loadLevel(levelNum) {
@@ -598,15 +599,15 @@ export class LevelManager {
     // ==================== LEVEL 2: JUST AFTER SUNSET ====================
     createLevel2() {
         this.scene.background = new THREE.Color(0x0a0510);
-        this.scene.fog = new THREE.FogExp2(0x0a0510, this.isMobile ? 0.025 : 0.018);
+        this.scene.fog = new THREE.FogExp2(0x0a0510, this.isMobile ? 0.020 : 0.015);
         
         this.createRoad(0);
         this.createGrass(0x0d1a0d);
         this.createCliff();
-        this.createTrees(this.isMobile ? 60 : 120, -1);
-        this.createUnderbrush(this.isMobile ? 25 : 60);
-        this.createBananaSlugs(10);
-        this.createMoths(this.isMobile ? 12 : 25);
+        this.createTrees(this.isMobile ? 50 : 80, -1);
+        this.createUnderbrush(this.isMobile ? 20 : 40);
+        this.createBananaSlugs(7);
+        this.createMoths(this.isMobile ? 8 : 12);
         this.placeRoadSigns();
         this.createDuskSky();
         this.createMoonlight(0.08);
@@ -821,6 +822,16 @@ export class LevelManager {
     }
 
     updateMoths(deltaTime) {
+        // Skip every other frame for better performance
+        this.mothUpdateFrame++;
+        if (this.mothUpdateFrame % 2 !== 0) {
+            // Still update phase for smooth animation
+            this.moths.forEach(moth => {
+                moth.phase += deltaTime * moth.speed;
+            });
+            return;
+        }
+        
         this.moths.forEach(moth => {
             moth.phase += deltaTime * moth.speed;
             moth.mesh.position.set(
