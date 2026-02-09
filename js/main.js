@@ -264,6 +264,9 @@ class Game {
         this.newtManager.setSpeedMultiplier(1);
         this.flashlight.setExternalDrainMultiplier(1);
 
+        // Stop any running ambient sounds from previous session
+        this.audioManager.stopAmbient();
+
         // Reload level 1
         const levelData = this.levelManager.loadLevel(1);
         this.roadCurve = levelData.roadCurve;
@@ -545,17 +548,22 @@ class Game {
 
     checkDangerZones() {
         const playerPos = this.player.getPosition();
+        const roadData = this.levelManager.getRoadDataAtZ(playerPos.z);
         const dangerZones = this.levelManager.dangerZones;
 
-        // Both levels use same danger zones: cliff and forest
-        // Check cliff (right side)
-        if (playerPos.x > dangerZones.cliff + 4) {
+        // Calculate lateral distance from road center
+        // Using dot product with road normal to get perp distance
+        const toPlayer = new THREE.Vector3().subVectors(playerPos, roadData.point);
+        const lateralDist = toPlayer.dot(roadData.normal);
+
+        // Check cliff (right side relative to road center)
+        if (lateralDist > dangerZones.cliff + 4) {
             return { inDanger: true, type: 'cliff' };
         }
 
-        // Check forest (left side)
-        if (playerPos.x < dangerZones.forest) {
-            const depth = Math.abs(playerPos.x - dangerZones.forest);
+        // Check forest (left side relative to road center)
+        if (lateralDist < dangerZones.forest) {
+            const depth = Math.abs(lateralDist - dangerZones.forest);
             const attackChance = Math.min(0.02 + (depth * 0.01), 0.15);
 
             if (Math.random() < attackChance) {
