@@ -27,6 +27,7 @@ class Game {
         this.clock = null;
         this.elapsedTime = 0;
         this.lastTime = 0;
+        this.frameCount = 0;
 
         // High score
         this.highScore = parseInt(localStorage.getItem('newtRescueHighScore')) || 0;
@@ -498,15 +499,19 @@ class Game {
         // Update cars
         this.carManager.update(deltaTime, this.elapsedTime);
 
-        // Check for cars crushing newts
-        const crushedNewts = this.carManager.checkNewtCollisions(this.newtManager.getNewts());
-        crushedNewts.forEach(newt => {
-            this.newtManager.crushNewt(newt);
-            this.audioManager.playNewtCrushSound();
-        });
+        // Check for cars crushing newts (throttled - only every 3 frames)
+        if (this.frameCount % 3 === 0) {
+            const crushedNewts = this.carManager.checkNewtCollisions(this.newtManager.getNewts());
+            crushedNewts.forEach(newt => {
+                this.newtManager.crushNewt(newt);
+                this.audioManager.playNewtCrushSound();
+            });
+        }
 
-        // Update car engine sounds
-        this.updateCarEngineSounds();
+        // Update car engine sounds (throttled - only every 2 frames)
+        if (this.frameCount % 2 === 0) {
+            this.updateCarEngineSounds();
+        }
 
         // Check car collision
         const collisionResult = this.carManager.checkCollision(
@@ -541,9 +546,12 @@ class Game {
             this.audioManager.stopLowBatteryWarning();
         }
 
-        // Update UI
-        this.ui.updateBattery(this.flashlight.getBattery());
-        this.ui.updateTime(this.elapsedTime);
+        // Update UI (throttled to reduce DOM manipulation)
+        // Only update UI every 5 frames (~12 updates per second at 60fps)
+        if (this.frameCount % 5 === 0) {
+            this.ui.updateBattery(this.flashlight.getBattery());
+            this.ui.updateTime(this.elapsedTime);
+        }
     }
 
     checkDangerZones() {
@@ -748,6 +756,7 @@ class Game {
             return;
         }
 
+        this.frameCount++;
         this.update(deltaTime);
 
         // Render scene

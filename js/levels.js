@@ -32,6 +32,10 @@ export class LevelManager {
         // Moths (SF-realistic, not fireflies)
         this.moths = [];
         this.mothUpdateFrame = 0;
+        
+        // Cache for road data lookups
+        this.roadDataCache = new Map();
+        this.cacheMaxSize = 50;
     }
     
     loadLevel(levelNum) {
@@ -76,6 +80,9 @@ export class LevelManager {
         this.splashParticles = [];
         this.moths = [];
         this.windStrength = 0;
+        
+        // Clear road data cache
+        this.roadDataCache.clear();
     }
     
     // ==================== ALMA BRIDGE ROAD CURVE (same for all 3 levels) ====================
@@ -625,14 +632,14 @@ export class LevelManager {
     createDuskSky() {
         const horizon = new THREE.Mesh(
             new THREE.PlaneGeometry(400, 60),
-            new THREE.MeshBasicMaterial({ color: 0x331122, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+            new THREE.MeshBasicMaterial({ color: 0x331122, transparent: true, opacity: 0.3, depthWrite: false })
         );
         horizon.position.set(-120, 15, 0);
         horizon.rotation.y = Math.PI / 2;
         this.scene.add(horizon);
         this.levelObjects.push(horizon);
 
-        const starCount = this.isMobile ? 100 : 300;
+        const starCount = this.isMobile ? 80 : 200;
         const starGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
@@ -849,18 +856,41 @@ export class LevelManager {
         if (!this.roadCurve) {
             return { point: new THREE.Vector3(0, 0, z), tangent: new THREE.Vector3(0, 0, 1), normal: new THREE.Vector3(1, 0, 0) };
         }
+        
+        // Round z to nearest 0.5 for cache key (reasonable precision)
+        const cacheKey = Math.round(z * 2) / 2;
+        
+        // Check cache
+        if (this.roadDataCache.has(cacheKey)) {
+            return this.roadDataCache.get(cacheKey);
+        }
+        
+        // Find closest point on curve
         let closestT = 0;
         let minZDiff = Infinity;
-        for (let i = 0; i <= 100; i++) {
-            const t = i / 100;
+        // Reduce iterations from 100 to 50 for performance
+        for (let i = 0; i <= 50; i++) {
+            const t = i / 50;
             const point = this.roadCurve.getPoint(t);
             const zDiff = Math.abs(point.z - z);
             if (zDiff < minZDiff) { minZDiff = zDiff; closestT = t; }
         }
+        
         const point = this.roadCurve.getPoint(closestT);
         const tangent = this.roadCurve.getTangent(closestT);
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-        return { point, tangent, normal, t: closestT };
+        const result = { point, tangent, normal, t: closestT };
+        
+        // Add to cache
+        this.roadDataCache.set(cacheKey, result);
+        
+        // Limit cache size to prevent memory growth
+        if (this.roadDataCache.size > this.cacheMaxSize) {
+            const firstKey = this.roadDataCache.keys().next().value;
+            this.roadDataCache.delete(firstKey);
+        }
+        
+        return result;
     }
     
     getCurrentLevel() { return this.currentLevel; }
