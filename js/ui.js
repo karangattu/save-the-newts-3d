@@ -76,6 +76,9 @@ export class UIManager {
         // Create click to start screen
         this.createClickToStartScreen();
 
+        // Create fullscreen button
+        this.createFullscreenButton();
+
         // Load saved player name
         const savedName = localStorage.getItem('newtRescuePlayerName');
         if (savedName && this.playerNameInput) {
@@ -734,12 +737,10 @@ export class UIManager {
         this.restartButton.addEventListener('click', callback);
     }
 
-    // Flashlight toggle callback setter
     onFlashlightToggle(callback) {
         this.onFlashlightToggleCallback = callback;
     }
 
-    // Update flashlight button appearance
     updateFlashlightButton(isOn) {
         if (this.flashlightToggleBtn) {
             if (isOn) {
@@ -749,6 +750,72 @@ export class UIManager {
                 this.flashlightToggleBtn.classList.add('off');
                 this.flashlightToggleBtn.innerHTML = '<i class="far fa-lightbulb"></i><span class="btn-label">Off</span>';
             }
+        }
+    }
+
+    createFullscreenButton() {
+        this.fullscreenStartBtn = document.getElementById('fullscreen-start-btn');
+        if (this.fullscreenStartBtn) {
+            this.fullscreenStartBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleFullscreen();
+            });
+        }
+
+        const btn = document.createElement('button');
+        btn.id = 'fullscreen-btn';
+        btn.innerHTML = '<i class="fas fa-expand"></i>';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleFullscreen();
+        });
+        document.body.appendChild(btn);
+        this.fullscreenBtn = btn;
+
+        document.addEventListener('fullscreenchange', () => this.syncFullscreenIcon());
+        document.addEventListener('webkitfullscreenchange', () => this.syncFullscreenIcon());
+    }
+
+    toggleFullscreen() {
+        const doc = document;
+        const el = doc.documentElement;
+        const isFS = doc.fullscreenElement || doc.webkitFullscreenElement;
+        if (isFS) {
+            if (doc.exitFullscreen) {
+                doc.exitFullscreen();
+            } else if (doc.webkitExitFullscreen) {
+                doc.webkitExitFullscreen();
+            }
+        } else {
+            if (el.requestFullscreen) {
+                el.requestFullscreen();
+            } else if (el.webkitRequestFullscreen) {
+                el.webkitRequestFullscreen();
+            }
+        }
+    }
+
+    requestFullscreen() {
+        const el = document.documentElement;
+        if (document.fullscreenElement || document.webkitFullscreenElement) return;
+        if (el.requestFullscreen) {
+            el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        }
+    }
+
+    syncFullscreenIcon() {
+        const isFS = document.fullscreenElement || document.webkitFullscreenElement;
+        if (this.fullscreenBtn) {
+            this.fullscreenBtn.innerHTML = isFS
+                ? '<i class="fas fa-compress"></i>'
+                : '<i class="fas fa-expand"></i>';
+        }
+        if (this.fullscreenStartBtn) {
+            this.fullscreenStartBtn.innerHTML = isFS
+                ? '<i class="fas fa-compress"></i> Exit Fullscreen'
+                : '<i class="fas fa-expand"></i> Fullscreen';
         }
     }
 }

@@ -247,9 +247,11 @@ class Game {
         // Start ambient sounds for the current level (crickets in level 1, rain in level 2)
         this.audioManager.startAmbient(this.currentLevel);
 
-        // Lock pointer (desktop only) - this MUST happen within user gesture
+        // Lock pointer (desktop only) or request fullscreen (mobile)
         if (!this.isMobile) {
             this.player.lock();
+        } else {
+            this.ui.requestFullscreen();
         }
 
         // Show level start poster

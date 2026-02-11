@@ -42,4 +42,18 @@ test.describe('Mobile friendliness', () => {
         const hud = page.locator('#hud');
         await expect(hud).toBeAttached();
     });
+
+    test('fullscreen button exists and is visible', async ({ page }) => {
+        const btn = page.locator('#fullscreen-btn');
+        await expect(btn).toBeVisible();
+        const html = await btn.innerHTML();
+        expect(html).toContain('fa-expand');
+    });
+
+    test('fullscreen button has proper touch target size', async ({ page }) => {
+        const btn = page.locator('#fullscreen-btn');
+        const box = await btn.boundingBox();
+        expect(box.width).toBeGreaterThanOrEqual(34);
+        expect(box.height).toBeGreaterThanOrEqual(34);
+    });
 });
