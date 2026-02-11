@@ -128,6 +128,7 @@ export class NewtManager {
             backRight: backRightLeg,
             backLeft: backLeftLeg
         };
+        group.userData.tail = tail;
 
         return group;
     }
@@ -262,18 +263,38 @@ export class NewtManager {
             }
 
             const legs = newt.mesh.userData.legs;
-            if (legs) {
-                const legSwing = newt.isPaused ? 0 : 0.4;
+            if (legs && !newt.isPaused) {
                 const phase = newt.walkCycle;
+                const swingX = 0.35;
+                const swingZ = 0.15;
 
-                legs.frontRight.rotation.z = Math.sin(phase) * legSwing - 0.2;
-                legs.backLeft.rotation.z = Math.sin(phase) * legSwing + 0.2;
-                legs.frontLeft.rotation.z = Math.sin(phase + Math.PI) * legSwing + 0.2;
-                legs.backRight.rotation.z = Math.sin(phase + Math.PI) * legSwing - 0.2;
+                legs.frontRight.rotation.x = Math.sin(phase) * swingX;
+                legs.frontRight.rotation.z = -0.2 + Math.cos(phase) * swingZ;
+
+                legs.backLeft.rotation.x = Math.sin(phase) * swingX;
+                legs.backLeft.rotation.z = 0.2 - Math.cos(phase) * swingZ;
+
+                legs.frontLeft.rotation.x = Math.sin(phase + Math.PI) * swingX;
+                legs.frontLeft.rotation.z = 0.2 - Math.cos(phase + Math.PI) * swingZ;
+
+                legs.backRight.rotation.x = Math.sin(phase + Math.PI) * swingX;
+                legs.backRight.rotation.z = -0.2 + Math.cos(phase + Math.PI) * swingZ;
+            } else if (legs && newt.isPaused) {
+                legs.frontRight.rotation.x *= 0.9;
+                legs.frontLeft.rotation.x *= 0.9;
+                legs.backRight.rotation.x *= 0.9;
+                legs.backLeft.rotation.x *= 0.9;
             }
 
-            newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.015;
-            newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.5) * 0.002;
+            const newtTail = newt.mesh.userData.tail;
+            if (newtTail && !newt.isPaused) {
+                newtTail.rotation.y = Math.sin(newt.walkCycle * 1.5) * 0.2;
+            }
+
+            newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.01;
+            if (!newt.isPaused) {
+                newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.7) * 0.003;
+            }
 
             newt.isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
 
