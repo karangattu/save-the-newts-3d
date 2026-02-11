@@ -138,19 +138,19 @@ export class UIManager {
         const clickScreen = document.createElement('div');
         clickScreen.id = 'click-to-start-screen';
         clickScreen.className = 'overlay hidden';
+        const action = this.isMobile ? 'Tap' : 'Click';
         clickScreen.innerHTML = `
             <div class="overlay-content click-to-start-content">
                 <div class="click-prompt">
                     <i class="fas fa-hand-pointer"></i>
-                    <h2>Click to Start</h2>
-                    <p>Click anywhere to begin the rescue mission</p>
+                    <h2>${action} to Start</h2>
+                    <p>${action} anywhere to begin the rescue mission</p>
                 </div>
             </div>
         `;
         document.body.appendChild(clickScreen);
         this.clickToStartScreen = clickScreen;
 
-        // Add click handler
         clickScreen.addEventListener('click', () => {
             this.hideClickToStartScreen();
             if (this.onClickToStartCallback) {

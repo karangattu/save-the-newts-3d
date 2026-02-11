@@ -1,22 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <title>Save the Newts 3D Game</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔦</text></svg>">
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔦</text></svg>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="css/game.css">
 </head>
+
 <body>
     <!-- Start Screen -->
     <div id="start-screen" class="overlay">
         <div class="overlay-content">
-            <h1><svg class="flashlight-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="44" height="22"><rect x="4" y="15" width="36" height="20" rx="3" fill="#ffd700"/><rect x="24" y="11" width="10" height="4" rx="1.5" fill="#e6c200"/><path d="M40 13 L40 37 L70 42 L70 8 Z" fill="#ffd700"/><rect x="70" y="7" width="4" height="36" rx="2" fill="#e6c200"/><line x1="76" y1="16" x2="88" y2="10" stroke="#ffd700" stroke-width="2" stroke-linecap="round" opacity="0.45"/><line x1="76" y1="25" x2="90" y2="25" stroke="#ffd700" stroke-width="2" stroke-linecap="round" opacity="0.45"/><line x1="76" y1="34" x2="88" y2="40" stroke="#ffd700" stroke-width="2" stroke-linecap="round" opacity="0.45"/></svg> Newt Rescue</h1>
+            <h1><svg class="flashlight-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" width="44"
+                    height="22">
+                    <rect x="4" y="15" width="36" height="20" rx="3" fill="#ffd700" />
+                    <rect x="24" y="11" width="10" height="4" rx="1.5" fill="#e6c200" />
+                    <path d="M40 13 L40 37 L70 42 L70 8 Z" fill="#ffd700" />
+                    <rect x="70" y="7" width="4" height="36" rx="2" fill="#e6c200" />
+                    <line x1="76" y1="16" x2="88" y2="10" stroke="#ffd700" stroke-width="2" stroke-linecap="round"
+                        opacity="0.45" />
+                    <line x1="76" y1="25" x2="90" y2="25" stroke="#ffd700" stroke-width="2" stroke-linecap="round"
+                        opacity="0.45" />
+                    <line x1="76" y1="34" x2="88" y2="40" stroke="#ffd700" stroke-width="2" stroke-linecap="round"
+                        opacity="0.45" />
+                </svg> Newt Rescue</h1>
             <p class="subtitle">Rescue newts crossing the road.</p>
-            
+
             <div class="instructions minimal">
                 <ul>
                     <li><strong>Move</strong> WASD / Left Joystick</li>
@@ -26,12 +41,12 @@
                 </ul>
                 <p class="micro-note">Avoid traffic. Battery refills on rescue. Toggle light to save battery!</p>
             </div>
-            
+
             <div class="sound-notice">
                 <i class="fas fa-volume-up"></i>
                 <span>Turn on sound for best experience</span>
             </div>
-            
+
             <div class="button-row">
                 <button id="start-button"><i class="fas fa-play"></i> Start Game</button>
                 <button id="view-leaderboard-btn"><i class="fas fa-trophy"></i> Leaderboard</button>
@@ -44,7 +59,7 @@
         <div class="overlay-content">
             <h1 id="gameover-title">Game Over</h1>
             <p id="gameover-reason"></p>
-            
+
             <div class="stats">
                 <div class="stat">
                     <span class="stat-value" id="final-score">0</span>
@@ -59,7 +74,7 @@
                     <span class="stat-label">High Score</span>
                 </div>
             </div>
-            
+
             <!-- Score Submission -->
             <div id="score-submission">
                 <div class="submit-row">
@@ -68,14 +83,14 @@
                 </div>
                 <p id="submit-status"></p>
             </div>
-            
+
             <div class="button-row">
                 <button id="restart-button"><i class="fas fa-redo"></i> Play Again</button>
                 <button id="leaderboard-btn"><i class="fas fa-list-ol"></i> Leaderboard</button>
             </div>
         </div>
     </div>
-    
+
     <!-- Leaderboard Modal -->
     <div id="leaderboard-modal" class="overlay hidden">
         <div class="overlay-content leaderboard-content">
@@ -96,17 +111,17 @@
             </div>
             <span id="battery-percent">100%</span>
         </div>
-        
+
         <div id="score-container">
             <span class="hud-label"><i class="fas fa-frog"></i> Rescued</span>
             <span id="score">0</span>
         </div>
-        
+
         <div id="time-container">
             <span class="hud-label"><i class="fas fa-stopwatch"></i> Time</span>
             <span id="time">0:00</span>
         </div>
-        
+
 
     </div>
 
@@ -129,6 +144,12 @@
     <!-- Near-miss vignette effect -->
     <div id="vignette"></div>
 
+    <!-- Landscape orientation hint for mobile -->
+    <div id="rotate-hint">
+        <i class="fas fa-mobile-alt"></i>
+        <p>Rotate your device to landscape</p>
+    </div>
+
     <!-- Game container -->
     <div id="game-container"></div>
 
@@ -145,4 +166,5 @@
     <!-- Game modules -->
     <script type="module" src="js/main.js"></script>
 </body>
+
 </html>
