@@ -4,24 +4,24 @@ test.describe('Graphics and flashlight enhancements', () => {
     test('renderer uses ACES tone mapping and sRGB output', async ({ page }) => {
         await page.goto('http://localhost:3000', { waitUntil: 'load' });
 
+        // Handle game start flow to ensure renderer is initialized
+        const startBtn = await page.waitForSelector('#start-button', { state: 'visible' });
+        await startBtn.click();
+        const skipBtn = await page.waitForSelector('#skip-video-btn', { state: 'visible', timeout: 5000 }).catch(() => null);
+        if (skipBtn) await skipBtn.click();
+        const clickToStart = await page.waitForSelector('#click-to-start-screen', { state: 'visible' });
+        await clickToStart.click();
+
         const result = await page.evaluate(() => {
-            const canvas = document.querySelector('canvas');
-            if (!canvas) return { error: 'no canvas' };
-            const renderer = canvas.__r$;
-            if (!renderer) {
-                const container = document.getElementById('game-container');
-                const c = container && container.querySelector('canvas');
-                if (!c) return { error: 'no game canvas' };
-            }
+            const container = document.getElementById('game-container');
+            const canvas = container && container.querySelector('canvas');
+            if (!canvas) return { error: 'no game canvas' };
             return { canvasExists: true };
         });
 
-        expect(result.canvasExists || !result.error).toBeTruthy();
+        expect(result.canvasExists).toBeTruthy();
 
         const rendererConfig = await page.evaluate(async () => {
-            const mod = await import('/js/main.js');
-            await new Promise(r => setTimeout(r, 500));
-
             const container = document.getElementById('game-container');
             const canvas = container && container.querySelector('canvas');
             if (!canvas) return { error: 'no canvas found' };

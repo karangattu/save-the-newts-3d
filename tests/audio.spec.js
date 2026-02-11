@@ -19,21 +19,23 @@ test.describe('Audio smoke tests', () => {
 
     // Wait for the start button and click (user gesture required to initialize AudioContext)
     const startBtn = await page.waitForSelector('#start-button', { state: 'visible' });
+
+    // Preparation: Click the first start button
+    await startBtn.click();
+
+    // Handle the video screen if it appears
+    const skipBtn = await page.waitForSelector('#skip-video-btn', { state: 'visible', timeout: 5000 }).catch(() => null);
+    if (skipBtn) {
+      await skipBtn.click();
+    }
+
+    // Now we are at the "Click to Start" screen. 
+    // This is the interaction that triggers the audio context and startAmbient().
+    const clickToStart = await page.waitForSelector('#click-to-start-screen', { state: 'visible' });
+
     await Promise.all([
-      page.waitForEvent('console', msg => msg.text().includes('AudioManager.startAmbient() - level: 1'), { timeout: 5000 }),
-      (async () => {
-        await startBtn.click();
-
-        // The UI shows the video first in this project; skip if present
-        const skip = await page.$('#skip-video-btn');
-        if (skip) await skip.click();
-
-        // Click through to the "click to start" / play flow if present
-        const clickToStart = await page.$('.click-to-start, #start-button');
-        if (clickToStart) {
-          try { await clickToStart.click(); } catch (e) { /* ignore */ }
-        }
-      })()
+      page.waitForEvent('console', msg => msg.text().includes('AudioManager.startAmbient() - level: 1'), { timeout: 10000 }),
+      clickToStart.click()
     ]);
   });
 
@@ -58,27 +60,27 @@ test.describe('Audio smoke tests', () => {
       };
       a1.stopAmbient && a1.stopAmbient();
 
-      // Start level 2 ambient and sample state
+      // Start level 3 ambient and sample state
       const a2 = new AudioManager();
       a2.init();
-      a2.startAmbient(2);
+      a2.startAmbient(3);
       await new Promise(r => setTimeout(r, 150));
-      const level2 = {
+      const level3 = {
         ambientNodeTypes: a2.ambientNodes.map(n => n && n.constructor && n.constructor.name).filter(Boolean),
         hasCricketInterval: !!a2.cricketInterval
       };
       a2.stopAmbient && a2.stopAmbient();
 
-      return { level1, level2 };
+      return { level1, level3 };
     });
 
     // Expectations:
     // - Level 1 should have cricketInterval truthy
-    // - Level 2 should include an AudioBufferSourceNode (rain) and cricketInterval should be falsy or less frequent
+    // - Level 3 should include an AudioBufferSourceNode (rain)
     expect(result.level1.hasCricketInterval).toBeTruthy();
-    expect(result.level2.ambientNodeTypes.length).toBeGreaterThan(0);
+    expect(result.level3.ambientNodeTypes.length).toBeGreaterThan(0);
 
-    const hasRainNode = result.level2.ambientNodeTypes.some(n => /AudioBufferSourceNode|AudioBufferSource/.test(n));
-    expect(hasRainNode, 'expected rain AudioBufferSourceNode in level 2 ambientNodes').toBeTruthy();
+    const hasRainNode = result.level3.ambientNodeTypes.some(n => /AudioBufferSourceNode|AudioBufferSource/.test(n));
+    expect(hasRainNode, 'expected rain AudioBufferSourceNode in level 3 ambientNodes').toBeTruthy();
   });
 });

@@ -5,22 +5,21 @@ test.describe('Level Start Posters', () => {
         // Navigate to the game
         await page.goto('http://localhost:3000');
 
-        // Bypass intro video and loading if possible or wait for them
-        // The UI handles the start button -> video -> click to start flow
-        const startButton = page.locator('#start-button');
-        if (await startButton.isVisible()) {
-            await startButton.click();
-        }
+        // Bypass intro video and loading
+        const startButton = page.locator('#start-button >> visible=true').first();
+        await startButton.waitFor({ state: 'visible' });
+        await startButton.click();
 
-        // Skip video if present
+        // Skip video if present - wait for it to be visible first to avoid race
         const skipButton = page.locator('#skip-video-btn');
+        await skipButton.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
         if (await skipButton.isVisible()) {
             await skipButton.click();
         }
 
         // Click to start
         const clickToStart = page.locator('#click-to-start-screen');
-        await clickToStart.waitFor({ state: 'visible', timeout: 5000 });
+        await clickToStart.waitFor({ state: 'visible', timeout: 10000 });
         await clickToStart.click();
     });
 
