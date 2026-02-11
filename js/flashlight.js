@@ -1,187 +1,247 @@
-// flashlight.js - Flashlight with battery drain and flicker effect
 import * as THREE from 'three';
+
+const _direction = new THREE.Vector3();
+const _flashlightDir = new THREE.Vector3();
+const _toPoint = new THREE.Vector3();
+const _warmColor = new THREE.Color(0xffaa60);
+const _normalColor = new THREE.Color(0xfff5e0);
+const _coolColor = new THREE.Color(0xe0f0ff);
 
 export class Flashlight {
     constructor(camera, scene, isMobile = false) {
         this.camera = camera;
         this.scene = scene;
         this.isMobile = isMobile;
-        
-        // Battery properties
+
         this.battery = 100;
-        this.baseDrainRate = 2; // % per second base rate
+        this.baseDrainRate = 2;
         this.drainMultiplier = 1;
-        
-        // Flashlight properties - brighter on mobile for visibility
+
         this.maxIntensity = isMobile ? 14 : 8;
         this.flickerThreshold = 20;
         this.isFlickering = false;
         this.flickerTimer = 0;
-        
-        // Toggle state
+
         this.isOn = true;
 
-        // External difficulty drain multiplier (for endless mode)
         this.externalDrainMultiplier = 1;
 
-        // Rescue pulse
         this.rescuePulseTimer = 0;
+
+        this.currentIntensity = this.maxIntensity;
+        this.targetIntensity = this.maxIntensity;
+        this.currentColorTemp = 0;
 
         this.init();
     }
-    
+
     init() {
-        // Main spotlight (flashlight beam) - wider angle on mobile
-        this.spotlight = new THREE.SpotLight(0xffffee, this.maxIntensity);
+        this.spotlight = new THREE.SpotLight(0xfff5e0, this.maxIntensity);
         this.spotlight.angle = this.isMobile ? 0.6 : 0.5;
-        this.spotlight.penumbra = this.isMobile ? 0.5 : 0.4;
-        this.spotlight.decay = this.isMobile ? 1.2 : 1.5;
-        this.spotlight.distance = this.isMobile ? 70 : 60;
-        this.spotlight.castShadow = true;
-        
-        // Shadow quality
-        this.spotlight.shadow.mapSize.width = 1024;
-        this.spotlight.shadow.mapSize.height = 1024;
-        this.spotlight.shadow.camera.near = 0.5;
-        this.spotlight.shadow.camera.far = 50;
-        
-        // Attach to camera
+        this.spotlight.penumbra = this.isMobile ? 0.6 : 0.55;
+        this.spotlight.decay = this.isMobile ? 1.0 : 1.3;
+        this.spotlight.distance = this.isMobile ? 80 : 70;
+        this.spotlight.castShadow = !this.isMobile;
+
+        this.spotlight.shadow.mapSize.width = 512;
+        this.spotlight.shadow.mapSize.height = 512;
+        this.spotlight.shadow.camera.near = 1;
+        this.spotlight.shadow.camera.far = 40;
+
         this.camera.add(this.spotlight);
         this.spotlight.position.set(0, 0, 0);
-        
-        // Target for spotlight (points forward from camera)
+
         this.target = new THREE.Object3D();
         this.scene.add(this.target);
         this.spotlight.target = this.target;
-        
-        // Add camera to scene so spotlight moves with it
+
         this.scene.add(this.camera);
-        
-        // Small point light for close illumination
-        this.fillLight = new THREE.PointLight(0xffffee, 0.8, 8);
+
+        this.fillLight = new THREE.PointLight(0xfff5e0, 0.8, 8);
         this.camera.add(this.fillLight);
         this.fillLight.position.set(0, 0, 0.5);
+
+        this.outerGlow = new THREE.SpotLight(0xffe8c0, this.isMobile ? 3 : 2);
+        this.outerGlow.angle = this.isMobile ? 0.85 : 0.75;
+        this.outerGlow.penumbra = 1.0;
+        this.outerGlow.decay = this.isMobile ? 1.8 : 2.0;
+        this.outerGlow.distance = this.isMobile ? 35 : 30;
+        this.outerGlow.castShadow = false;
+        this.camera.add(this.outerGlow);
+        this.outerGlow.position.set(0, 0, 0);
+        this.outerGlow.target = this.target;
+
+        if (!this.isMobile) {
+            this.createVolumetricCone();
+        }
     }
-    
+
+    createVolumetricCone() {
+        const coneLength = 15;
+        const coneRadius = Math.tan(0.5) * coneLength;
+        const coneGeo = new THREE.ConeGeometry(coneRadius, coneLength, 12, 1, true);
+        coneGeo.rotateX(Math.PI / 2);
+        coneGeo.translate(0, 0, -coneLength / 2);
+
+        this.coneMaterial = new THREE.MeshBasicMaterial({
+            color: 0xfff5e0,
+            transparent: true,
+            opacity: 0.035,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.FrontSide,
+            fog: false
+        });
+
+        this.volumetricCone = new THREE.Mesh(coneGeo, this.coneMaterial);
+        this.volumetricCone.frustumCulled = false;
+        this.camera.add(this.volumetricCone);
+    }
+
     update(deltaTime, elapsedTime) {
-        // Update drain multiplier based on elapsed time (gets harder)
         const elapsedMinutes = elapsedTime / 60;
         this.drainMultiplier = 1 + elapsedMinutes * 0.2;
-        
-        // Only drain battery if flashlight is on
+
         if (this.isOn && this.battery > 0) {
             this.battery -= this.baseDrainRate * this.drainMultiplier * this.externalDrainMultiplier * deltaTime;
-            this.battery = Math.max(0, this.battery);
+            if (this.battery < 0) this.battery = 0;
         }
-        
-        // Update spotlight target (points where camera is looking)
-        const direction = new THREE.Vector3();
-        this.camera.getWorldDirection(direction);
-        this.target.position.copy(this.camera.position).add(direction.multiplyScalar(10));
-        
-        // Calculate intensity based on battery and on/off state
-        let intensity = 0;
+
+        this.camera.getWorldDirection(_direction);
+        this.target.position.copy(this.camera.position).add(_direction.multiplyScalar(10));
+
+        this.targetIntensity = 0;
         if (this.isOn && this.battery > 0) {
-            intensity = (this.battery / 100) * this.maxIntensity;
-            
-            // Flicker effect when low battery
+            this.targetIntensity = (this.battery / 100) * this.maxIntensity;
+
             if (this.battery < this.flickerThreshold) {
                 this.flickerTimer += deltaTime;
-                
-                // Random flicker
-                if (Math.random() < 0.1) {
+                const flickerNoise = Math.sin(this.flickerTimer * 25) * 0.3
+                    + Math.sin(this.flickerTimer * 47) * 0.2
+                    + Math.sin(this.flickerTimer * 13) * 0.15;
+                const flickerFactor = 0.5 + flickerNoise * 0.5;
+
+                if (Math.random() < 0.08) {
                     this.isFlickering = true;
                 }
-                
+
                 if (this.isFlickering) {
-                    intensity *= Math.random() * 0.5 + 0.3;
-                    if (Math.random() < 0.3) {
+                    this.targetIntensity *= flickerFactor > 0.1 ? flickerFactor : 0.1;
+                    if (Math.random() < 0.25) {
                         this.isFlickering = false;
                     }
                 }
+
+                const t = deltaTime * 3;
+                this.currentColorTemp += (1.0 - (this.battery / this.flickerThreshold) - this.currentColorTemp) * t;
+            } else {
+                this.currentColorTemp += (0 - this.currentColorTemp) * deltaTime * 5;
             }
+        } else {
+            this.currentColorTemp += (0 - this.currentColorTemp) * deltaTime * 5;
         }
-        
-        // Rescue pulse: briefly brighten then lerp back
+
         if (this.rescuePulseTimer > 0) {
             this.rescuePulseTimer -= deltaTime;
             if (this.rescuePulseTimer <= 0) {
                 this.rescuePulseTimer = 0;
             } else {
-                // Override intensity with pulse
-                intensity = Math.max(intensity, this.maxIntensity * (1 + 0.5 * (this.rescuePulseTimer / 0.2)));
+                const pulseProgress = this.rescuePulseTimer / 0.35;
+                const pulseTarget = this.maxIntensity * (1 + 0.8 * pulseProgress);
+                if (pulseTarget > this.targetIntensity) this.targetIntensity = pulseTarget;
+                this.currentColorTemp += (-0.3 - this.currentColorTemp) * pulseProgress * 0.5;
             }
         }
 
-        this.spotlight.intensity = intensity;
+        const lerpSpeed = this.isFlickering ? 15 : 8;
+        this.currentIntensity += (this.targetIntensity - this.currentIntensity) * deltaTime * lerpSpeed;
+
+        this.spotlight.intensity = this.currentIntensity;
+
+        const ct = this.currentColorTemp;
+        if (ct > 0) {
+            const clampedCt = ct > 1 ? 1 : ct;
+            this.spotlight.color.copy(_normalColor).lerp(_warmColor, clampedCt);
+        } else if (ct < 0) {
+            const absCt = -ct > 1 ? 1 : -ct;
+            this.spotlight.color.copy(_normalColor).lerp(_coolColor, absCt);
+        } else {
+            this.spotlight.color.copy(_normalColor);
+        }
+
         this.fillLight.intensity = this.isOn && this.battery > 0 ? (this.battery / 100) * 0.8 : 0;
+        this.fillLight.color.copy(this.spotlight.color);
+
+        const glowBase = this.isMobile ? 3 : 2;
+        this.outerGlow.intensity = this.isOn && this.battery > 0
+            ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity)
+            : 0;
+        this.outerGlow.color.copy(this.spotlight.color);
+
+        if (this.volumetricCone) {
+            const baseOpacity = this.isOn && this.battery > 0
+                ? 0.035 * (this.battery / 100) * (this.currentIntensity / this.maxIntensity)
+                : 0;
+            this.coneMaterial.opacity = baseOpacity;
+            this.coneMaterial.color.copy(this.spotlight.color);
+            this.volumetricCone.visible = baseOpacity > 0.001;
+        }
     }
-    
+
     toggle() {
         this.isOn = !this.isOn;
         return this.isOn;
     }
-    
+
     setOn(state) {
         this.isOn = state;
     }
-    
+
     getIsOn() {
         return this.isOn;
     }
-    
+
     getBattery() {
         return this.battery;
     }
-    
+
     isDead() {
         return this.battery <= 0;
     }
-    
+
     isLowBattery() {
         return this.battery < this.flickerThreshold;
     }
-    
+
     recharge(amount) {
         this.battery = Math.min(100, this.battery + amount);
     }
-    
-    // Get the spotlight for raycasting (newt detection)
+
     getSpotlight() {
         return this.spotlight;
     }
-    
-    // Check if a point is illuminated by the flashlight
+
     isPointIlluminated(point) {
-        // Only illuminate if flashlight is on and has battery
         if (!this.isOn || this.battery <= 0) return false;
-        
-        // Get flashlight direction
-        const flashlightDir = new THREE.Vector3();
-        this.camera.getWorldDirection(flashlightDir);
-        
-        // Get direction to point
-        const toPoint = new THREE.Vector3();
-        toPoint.subVectors(point, this.camera.position);
-        const distance = toPoint.length();
-        toPoint.normalize();
-        
-        // Check distance
+
+        this.camera.getWorldDirection(_flashlightDir);
+
+        _toPoint.subVectors(point, this.camera.position);
+        const distance = _toPoint.length();
+
         if (distance > this.spotlight.distance) return false;
-        
-        // Check angle
-        const angle = flashlightDir.angleTo(toPoint);
-        if (angle > this.spotlight.angle) return false;
-        
-        return true;
+
+        _toPoint.divideScalar(distance);
+        const angle = _flashlightDir.angleTo(_toPoint);
+        return angle <= this.spotlight.angle;
     }
-    
+
     setExternalDrainMultiplier(mult) {
         this.externalDrainMultiplier = mult;
     }
 
     pulseOnRescue() {
-        this.rescuePulseTimer = 0.2;
+        this.rescuePulseTimer = 0.35;
     }
 
     reset() {
@@ -189,9 +249,18 @@ export class Flashlight {
         this.drainMultiplier = 1;
         this.isFlickering = false;
         this.flickerTimer = 0;
-        this.isOn = true; // Reset to on
+        this.isOn = true;
         this.rescuePulseTimer = 0;
+        this.currentIntensity = this.maxIntensity;
+        this.targetIntensity = this.maxIntensity;
+        this.currentColorTemp = 0;
         this.spotlight.intensity = this.maxIntensity;
+        this.spotlight.color.setHex(0xfff5e0);
         this.fillLight.intensity = 0.8;
+        this.outerGlow.intensity = this.isMobile ? 3 : 2;
+        if (this.volumetricCone) {
+            this.volumetricCone.visible = true;
+            this.coneMaterial.opacity = 0.035;
+        }
     }
 }

@@ -63,6 +63,9 @@ class Game {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
         this.renderer.shadowMap.enabled = !this.isMobile;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
         this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
@@ -187,13 +190,22 @@ class Game {
     }
 
     async startGameWithLoading() {
-        // Show loading screen
         this.ui.showLoadingScreen('Loading Game...');
 
-        // Small delay for loading screen to render
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Show click to start screen (allows proper pointer lock on desktop)
+        this.carManager.carPool.forEach(pool => {
+            pool.meshes.forEach(m => { m.visible = true; });
+        });
+
+        this.renderer.compile(this.scene, this.camera);
+
+        this.carManager.carPool.forEach(pool => {
+            pool.meshes.forEach(m => { m.visible = false; });
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+
         this.ui.showClickToStartScreen();
     }
 
@@ -551,10 +563,9 @@ class Game {
         const roadData = this.levelManager.getRoadDataAtZ(playerPos.z);
         const dangerZones = this.levelManager.dangerZones;
 
-        // Calculate lateral distance from road center
-        // Using dot product with road normal to get perp distance
-        const toPlayer = new THREE.Vector3().subVectors(playerPos, roadData.point);
-        const lateralDist = toPlayer.dot(roadData.normal);
+        if (!this._dangerVec) this._dangerVec = new THREE.Vector3();
+        this._dangerVec.subVectors(playerPos, roadData.point);
+        const lateralDist = this._dangerVec.dot(roadData.normal);
 
         // Check cliff (right side relative to road center)
         if (lateralDist > dangerZones.cliff + 4) {
@@ -730,6 +741,32 @@ class Game {
         }
     }
 
+    pollGamepadUI() {
+        const gp = this.player.gamepadIndex >= 0
+            ? navigator.getGamepads()[this.player.gamepadIndex]
+            : null;
+        if (!gp) return;
+
+        const startPressed = (gp.buttons[9] && gp.buttons[9].pressed) ||
+            (gp.buttons[0] && gp.buttons[0].pressed);
+
+        if (startPressed && !this._gamepadUIPressed) {
+            this._gamepadUIPressed = true;
+
+            if (this.state === 'start') {
+                this.showIntroVideo();
+            } else if (this.state === 'video') {
+                this.startGameWithLoading();
+            } else if (this.state === 'click-to-start') {
+                this.finalizeGameStart();
+            } else if (this.state === 'gameover') {
+                this.restartGame();
+            }
+        } else if (!startPressed) {
+            this._gamepadUIPressed = false;
+        }
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
 
@@ -748,9 +785,9 @@ class Game {
             return;
         }
 
+        this.pollGamepadUI();
         this.update(deltaTime);
 
-        // Render scene
         this.renderer.render(this.scene, this.camera);
     }
 }

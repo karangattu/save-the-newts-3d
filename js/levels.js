@@ -10,33 +10,33 @@ export class LevelManager {
         this.renderer = renderer;
         this.isMobile = isMobile;
         this.currentLevel = 1;
-        
+
         this.levelObjects = [];
         this.roadCurve = null;
         this.dangerZones = null;
         this.roadBounds = null;
-        
+
         // Rain system
         this.rain = null;
         this.rainGeometry = null;
         this.rainVelocities = null;
-        
+
         // Wind for level 3
         this.windStrength = 0;
         this.windDirection = new THREE.Vector3(1, 0, 0.3);
         this.windTime = 0;
-        
+
         this.splashParticles = [];
         this.puddlePositions = [];
 
         // Moths (SF-realistic, not fireflies)
         this.moths = [];
     }
-    
+
     loadLevel(levelNum) {
         this.currentLevel = levelNum;
         this.clearLevel();
-        
+
         if (levelNum === 1) {
             this.createLevel1();
         } else if (levelNum === 2) {
@@ -44,14 +44,14 @@ export class LevelManager {
         } else if (levelNum === 3) {
             this.createLevel3();
         }
-        
+
         return {
             roadCurve: this.roadCurve,
             dangerZones: this.dangerZones,
             roadBounds: this.roadBounds
         };
     }
-    
+
     clearLevel() {
         this.levelObjects.forEach(obj => {
             if (obj.geometry) obj.geometry.dispose();
@@ -65,66 +65,66 @@ export class LevelManager {
             this.scene.remove(obj);
         });
         this.levelObjects = [];
-        
+
         if (this.rain) {
             this.scene.remove(this.rain);
             this.rain = null;
         }
-        
+
         this.splashParticles.forEach(splash => this.scene.remove(splash));
         this.splashParticles = [];
         this.moths = [];
         this.windStrength = 0;
     }
-    
+
     // ==================== ALMA BRIDGE ROAD CURVE (same for all 3 levels) ====================
     createAlmaBridgeRoadCurve() {
         const roadLength = 300;
         // S-curves matching Alma Bridge Rd near Lexington Reservoir from the map
         const curvePoints = [
             new THREE.Vector3(-15, 0, -roadLength / 2),
-            new THREE.Vector3(-8,  0, -roadLength / 2 + 30),
-            new THREE.Vector3(2,   0, -roadLength / 2 + 60),
-            new THREE.Vector3(10,  0, -roadLength / 2 + 90),
-            new THREE.Vector3(6,   0, -roadLength / 2 + 120),
-            new THREE.Vector3(-2,  0, -roadLength / 2 + 150),
-            new THREE.Vector3(-8,  0, -roadLength / 2 + 180),
-            new THREE.Vector3(-4,  0, -roadLength / 2 + 210),
-            new THREE.Vector3(5,   0, -roadLength / 2 + 240),
-            new THREE.Vector3(12,  0, -roadLength / 2 + 270),
-            new THREE.Vector3(8,   0, roadLength / 2),
+            new THREE.Vector3(-8, 0, -roadLength / 2 + 30),
+            new THREE.Vector3(2, 0, -roadLength / 2 + 60),
+            new THREE.Vector3(10, 0, -roadLength / 2 + 90),
+            new THREE.Vector3(6, 0, -roadLength / 2 + 120),
+            new THREE.Vector3(-2, 0, -roadLength / 2 + 150),
+            new THREE.Vector3(-8, 0, -roadLength / 2 + 180),
+            new THREE.Vector3(-4, 0, -roadLength / 2 + 210),
+            new THREE.Vector3(5, 0, -roadLength / 2 + 240),
+            new THREE.Vector3(12, 0, -roadLength / 2 + 270),
+            new THREE.Vector3(8, 0, roadLength / 2),
         ];
         this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
         this.roadCurve.tension = 0.4;
         return this.roadCurve;
     }
-    
+
     createRibbonGeometry(curve, width, segments = 200) {
         const vertices = [];
         const indices = [];
         const uvs = [];
-        
+
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             const point = curve.getPoint(t);
             const tangent = curve.getTangent(t);
             const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-            
+
             const leftPoint = point.clone().add(normal.clone().multiplyScalar(-width / 2));
             const rightPoint = point.clone().add(normal.clone().multiplyScalar(width / 2));
-            
+
             vertices.push(leftPoint.x, leftPoint.y, leftPoint.z);
             vertices.push(rightPoint.x, rightPoint.y, rightPoint.z);
             uvs.push(0, t);
             uvs.push(1, t);
-            
+
             if (i < segments) {
                 const base = i * 2;
                 indices.push(base, base + 1, base + 2);
                 indices.push(base + 1, base + 3, base + 2);
             }
         }
-        
+
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -314,12 +314,12 @@ export class LevelManager {
             this.createWarningSign(20, z);
         }
     }
-    
+
     // ==================== SHARED ROAD CREATION ====================
     createRoad(wetness = 0) {
         const roadWidth = 12;
         this.createAlmaBridgeRoadCurve();
-        
+
         const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 250);
         const roadMaterial = new THREE.MeshStandardMaterial({
             color: wetness > 0 ? 0x1a1a1a : 0x2a2a2a,
@@ -327,15 +327,15 @@ export class LevelManager {
             metalness: wetness > 0 ? 0.4 : 0.2,
             side: THREE.DoubleSide
         });
-        
+
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.position.y = 0.01;
         road.receiveShadow = !this.isMobile;
         this.scene.add(road);
         this.levelObjects.push(road);
-        
+
         this.createRoadMarkings(roadWidth);
-        
+
         const roadLength = 300;
         this.roadBounds = {
             minX: -40,
@@ -345,11 +345,11 @@ export class LevelManager {
         };
         this.dangerZones = { forest: -12, cliff: 14 };
     }
-    
+
     createRoadMarkings(roadWidth) {
         const edgeLinePoints = [];
         const steps = 120;
-        
+
         for (let i = 0; i <= steps; i++) {
             const t = i / steps;
             const point = this.roadCurve.getPoint(t);
@@ -358,21 +358,21 @@ export class LevelManager {
             edgeLinePoints.push(point.clone().add(normal.clone().multiplyScalar(-roadWidth / 2 + 0.5)));
             edgeLinePoints.push(point.clone().add(normal.clone().multiplyScalar(roadWidth / 2 - 0.5)));
         }
-        
+
         const leftEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 0));
         const rightEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 1));
         const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-        
+
         const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, 120, 0.08, 4, false), lineMaterial);
         leftLine.position.y = 0.02;
         this.scene.add(leftLine);
         this.levelObjects.push(leftLine);
-        
+
         const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, 120, 0.08, 4, false), lineMaterial);
         rightLine.position.y = 0.02;
         this.scene.add(rightLine);
         this.levelObjects.push(rightLine);
-        
+
         const dashMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
         for (let i = 0; i < 120; i += 6) {
             const t = i / 120;
@@ -388,7 +388,7 @@ export class LevelManager {
             this.levelObjects.push(dash);
         }
     }
-    
+
     // ==================== SHARED ENVIRONMENT ====================
     createCliff() {
         const cliffLength = 300;
@@ -400,7 +400,7 @@ export class LevelManager {
         cliffFace.position.set(28, -15, 0);
         this.scene.add(cliffFace);
         this.levelObjects.push(cliffFace);
-        
+
         const water = new THREE.Mesh(
             new THREE.PlaneGeometry(100, 300),
             new THREE.MeshStandardMaterial({ color: 0x1a3d5c, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.9 })
@@ -410,24 +410,24 @@ export class LevelManager {
         this.scene.add(water);
         this.levelObjects.push(water);
     }
-    
+
     createGrass(color = 0x0a1a0a) {
         const grassGeo = new THREE.PlaneGeometry(80, 300);
         const grassMat = new THREE.MeshStandardMaterial({ color: color, roughness: 1.0 });
-        
+
         const leftGrass = new THREE.Mesh(grassGeo, grassMat);
         leftGrass.rotation.x = -Math.PI / 2;
         leftGrass.position.set(-45, -0.01, 0);
         this.scene.add(leftGrass);
         this.levelObjects.push(leftGrass);
-        
+
         const rightGrass = new THREE.Mesh(grassGeo, grassMat);
         rightGrass.rotation.x = -Math.PI / 2;
         rightGrass.position.set(45, -0.01, 0);
         this.scene.add(rightGrass);
         this.levelObjects.push(rightGrass);
     }
-    
+
     createTrees(count, side) {
         if (this.isMobile) count = Math.floor(count * 0.5);
         const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6);
@@ -558,7 +558,7 @@ export class LevelManager {
     createLevel1() {
         this.scene.background = new THREE.Color(0x050510);
         this.scene.fog = new THREE.FogExp2(0x050510, this.isMobile ? 0.018 : 0.012);
-        
+
         this.createRoad(0);
         this.createGrass(0x0a1a0a);
         this.createCliff();
@@ -573,6 +573,10 @@ export class LevelManager {
         const ambient = new THREE.AmbientLight(0x1a1a2e, 0.3);
         this.scene.add(ambient);
         this.levelObjects.push(ambient);
+
+        const hemi = new THREE.HemisphereLight(0x0a0a2e, 0x050510, 0.15);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
     }
 
     createStars() {
@@ -594,12 +598,12 @@ export class LevelManager {
         this.scene.add(stars);
         this.levelObjects.push(stars);
     }
-    
+
     // ==================== LEVEL 2: JUST AFTER SUNSET ====================
     createLevel2() {
         this.scene.background = new THREE.Color(0x0a0510);
         this.scene.fog = new THREE.FogExp2(0x0a0510, this.isMobile ? 0.025 : 0.018);
-        
+
         this.createRoad(0);
         this.createGrass(0x0d1a0d);
         this.createCliff();
@@ -619,6 +623,10 @@ export class LevelManager {
         horizonLight.position.set(-50, 5, 0);
         this.scene.add(horizonLight);
         this.levelObjects.push(horizonLight);
+
+        const hemi = new THREE.HemisphereLight(0x1a0820, 0x0a0510, 0.12);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
     }
 
     createDuskSky() {
@@ -649,12 +657,12 @@ export class LevelManager {
         this.scene.add(stars);
         this.levelObjects.push(stars);
     }
-    
+
     // ==================== LEVEL 3: RAIN & WIND STORM ====================
     createLevel3() {
         this.scene.background = new THREE.Color(0x030308);
         this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.06 : 0.045);
-        
+
         this.createRoad(1);
         this.createGrass(0x0d260d);
         this.createCliff();
@@ -669,6 +677,11 @@ export class LevelManager {
         const ambient = new THREE.AmbientLight(0x111122, 0.12);
         this.scene.add(ambient);
         this.levelObjects.push(ambient);
+
+        const hemi = new THREE.HemisphereLight(0x080818, 0x030308, 0.08);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
+
         this.windStrength = 1.0;
     }
 
@@ -683,7 +696,7 @@ export class LevelManager {
         this.scene.add(water);
         this.levelObjects.push(water);
     }
-    
+
     createPuddles() {
         const puddleCount = this.isMobile ? 16 : 32;
         for (let i = 0; i < puddleCount; i++) {
@@ -698,7 +711,7 @@ export class LevelManager {
             this.levelObjects.push(puddle);
         }
     }
-    
+
     createRain() {
         const rainCount = this.isMobile ? 3000 : 8000;
         this.rainGeometry = new THREE.BufferGeometry();
@@ -716,7 +729,7 @@ export class LevelManager {
         }));
         this.scene.add(this.rain);
     }
-    
+
     createMoonlight(intensity = 0.12) {
         const moonlight = new THREE.DirectionalLight(0x6666aa, intensity);
         moonlight.position.set(20, 50, 10);
@@ -734,11 +747,11 @@ export class LevelManager {
         this.scene.add(moonlight);
         this.levelObjects.push(moonlight);
     }
-    
+
     // ==================== UPDATE METHODS ====================
     updateRain(deltaTime, cameraPosition) {
         if (!this.rain || !this.rainGeometry || this.currentLevel !== 3) return;
-        
+
         const positions = this.rainGeometry.attributes.position.array;
         const count = positions.length / 3;
 
@@ -746,7 +759,7 @@ export class LevelManager {
         const windGust = Math.sin(this.windTime * 0.5) * 0.5 + 0.5;
         const windX = (2 + windGust * 4) * this.windStrength;
         const windZ = Math.sin(this.windTime * 0.3) * 1.5 * this.windStrength;
-        
+
         for (let i = 0; i < count; i++) {
             positions[i * 3 + 1] -= this.rainVelocities[i] * deltaTime * 35;
             positions[i * 3] += windX * deltaTime;
@@ -770,7 +783,7 @@ export class LevelManager {
             }
         });
     }
-    
+
     createSplashParticle(x, z) {
         if (this.currentLevel !== 3) return;
         const maxSplashes = this.isMobile ? 30 : 60;
@@ -794,7 +807,7 @@ export class LevelManager {
         this.scene.add(splash);
         this.splashParticles.push(splash);
     }
-    
+
     updateSplashes(deltaTime, cameraPosition) {
         if (this.currentLevel !== 3) {
             this.splashParticles.forEach(s => this.scene.remove(s));
@@ -833,7 +846,7 @@ export class LevelManager {
             moth.rightWing.rotation.y = -0.3 - wingAngle;
         });
     }
-    
+
     getRoadDataAtZ(z) {
         if (!this.roadCurve) {
             return { point: new THREE.Vector3(0, 0, z), tangent: new THREE.Vector3(0, 0, 1), normal: new THREE.Vector3(1, 0, 0) };
@@ -851,7 +864,7 @@ export class LevelManager {
         const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
         return { point, tangent, normal, t: closestT };
     }
-    
+
     getCurrentLevel() { return this.currentLevel; }
     getWindStrength() { return this.currentLevel === 3 ? this.windStrength : 0; }
 }

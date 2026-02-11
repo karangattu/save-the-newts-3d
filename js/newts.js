@@ -1,5 +1,7 @@
-// newts.js - Procedural newt entities with spawning, AI, and rescue mechanics
 import * as THREE from 'three';
+
+const _moveDir = new THREE.Vector3();
+const _scaledDir = new THREE.Vector3();
 
 export class NewtManager {
     constructor(scene, flashlight, roadCurve = null) {
@@ -243,12 +245,13 @@ export class NewtManager {
             }
 
             if (!newt.isPaused) {
-                const moveDir = new THREE.Vector3().subVectors(newt.targetPosition, newt.mesh.position);
-                const distanceToTarget = moveDir.length();
-                moveDir.normalize();
+                _moveDir.subVectors(newt.targetPosition, newt.mesh.position);
+                const distanceToTarget = _moveDir.length();
+                _moveDir.normalize();
 
                 const moveDistance = newt.speed * deltaTime;
-                newt.mesh.position.add(moveDir.clone().multiplyScalar(moveDistance));
+                _scaledDir.copy(_moveDir).multiplyScalar(moveDistance);
+                newt.mesh.position.add(_scaledDir);
                 newt.walkCycle += deltaTime * newt.speed * 12;
 
                 if (distanceToTarget < 0.5 || newt.mesh.position.distanceTo(newt.startPosition) > newt.startPosition.distanceTo(newt.targetPosition)) {
