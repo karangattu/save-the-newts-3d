@@ -304,12 +304,12 @@ export class Player {
         this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
         this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
 
+        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+
         if (this.isMobile) {
-            this.direction.z = this.joystickInput.y;
-            this.direction.x = this.joystickInput.x;
-        } else {
-            this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-            this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+            if (this.joystickInput.x !== 0) this.direction.x = this.joystickInput.x;
+            if (this.joystickInput.y !== 0) this.direction.z = this.joystickInput.y;
         }
 
         if (this.gamepadIndex >= 0) {
