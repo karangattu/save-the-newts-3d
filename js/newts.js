@@ -27,6 +27,9 @@ export class NewtManager {
 
         // Rescue celebration particles
         this.rescueEffects = [];
+
+        // Newt pooling to avoid runtime allocations
+        this.newtPool = [];
     }
 
     setRoadCurve(roadCurve) {
@@ -133,8 +136,56 @@ export class NewtManager {
         return group;
     }
 
+    getNewtFromPool() {
+        if (this.newtPool.length > 0) {
+            const mesh = this.newtPool.pop();
+            mesh.visible = true;
+            return mesh;
+        }
+        return this.createNewtMesh();
+    }
+
+    resetNewtAppearance(mesh) {
+        mesh.rotation.set(0, 0, 0);
+
+        const eyes = mesh.userData.eyes;
+        if (eyes) {
+            eyes.left.material.color.setHex(0x222200);
+            eyes.left.material.emissive.setHex(0x000000);
+            eyes.left.material.emissiveIntensity = 0;
+            eyes.right.material.color.setHex(0x222200);
+            eyes.right.material.emissive.setHex(0x000000);
+            eyes.right.material.emissiveIntensity = 0;
+        }
+
+        const legs = mesh.userData.legs;
+        if (legs) {
+            legs.frontRight.rotation.set(0, 0, -0.3);
+            legs.frontLeft.rotation.set(0, 0, -0.3);
+            legs.backRight.rotation.set(0, 0, 0.3);
+            legs.backLeft.rotation.set(0, 0, 0.3);
+        }
+
+        if (mesh.userData.tail) {
+            mesh.userData.tail.rotation.y = 0;
+        }
+    }
+
+    releaseNewtMesh(mesh) {
+        if (!mesh) return;
+        mesh.visible = false;
+        this.scene.remove(mesh);
+        this.newtPool.push(mesh);
+    }
+
     spawnNewt() {
-        const mesh = this.createNewtMesh();
+        const mesh = this.getNewtFromPool();
+        if (!mesh.parent) {
+            this.scene.add(mesh);
+        } else {
+            mesh.visible = true;
+        }
+        this.resetNewtAppearance(mesh);
 
         // Random spawn position at road edge along the curved road
         const side = Math.random() > 0.5 ? 1 : -1;
@@ -162,8 +213,6 @@ export class NewtManager {
 
         const direction = new THREE.Vector3().subVectors(targetPosition, startPosition).normalize();
         mesh.rotation.y = Math.atan2(direction.x, direction.z);
-
-        this.scene.add(mesh);
 
         const newt = {
             mesh: mesh,
@@ -256,7 +305,7 @@ export class NewtManager {
                 newt.walkCycle += deltaTime * newt.speed * 12;
 
                 if (distanceToTarget < 0.5 || newt.mesh.position.distanceTo(newt.startPosition) > newt.startPosition.distanceTo(newt.targetPosition)) {
-                    this.scene.remove(newt.mesh);
+                    this.releaseNewtMesh(newt.mesh);
                     this.newts.splice(i, 1);
                     continue;
                 }
@@ -327,7 +376,7 @@ export class NewtManager {
             const distance = Math.sqrt(dx * dx + dz * dz);
 
             if (distance < this.rescueDistance) {
-                this.scene.remove(newt.mesh);
+                this.releaseNewtMesh(newt.mesh);
                 this.newts.splice(i, 1);
                 this.rescuedCount++;
                 rescuedNewts.push(newt);
@@ -433,7 +482,7 @@ export class NewtManager {
         const index = this.newts.indexOf(newt);
         if (index > -1) {
             this.createSplatEffect(newt.mesh.position.clone());
-            this.scene.remove(newt.mesh);
+            this.releaseNewtMesh(newt.mesh);
             this.newts.splice(index, 1);
             return true;
         }
@@ -461,7 +510,7 @@ export class NewtManager {
 
     reset() {
         this.newts.forEach(newt => {
-            this.scene.remove(newt.mesh);
+            this.releaseNewtMesh(newt.mesh);
         });
         this.newts = [];
         this.rescuedCount = 0;
