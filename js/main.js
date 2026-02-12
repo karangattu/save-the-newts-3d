@@ -10,11 +10,17 @@ import { UIManager } from './ui.js';
 import { LeaderboardManager } from './leaderboard.js';
 import { PredatorManager } from './predators.js';
 
+function detectConsole() {
+    const ua = navigator.userAgent.toLowerCase();
+    return /xbox|playstation|nintendo/i.test(ua);
+}
+
 class Game {
     constructor() {
-        // Game state
-        this.state = 'menu'; // 'menu', 'playing', 'gameover', 'loading'
+        this.state = 'menu';
         this.isMobile = false;
+        this.isConsole = detectConsole();
+        this.isLowEnd = false;
         this.isVisibilityPaused = false;
 
         // Level tracking
@@ -46,6 +52,7 @@ class Game {
         // Create UI first to detect mobile
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
+        this.isLowEnd = this.isMobile || this.isConsole;
 
         // Create scene renderer and camera first
         this.scene = new THREE.Scene();
@@ -57,18 +64,18 @@ class Game {
         );
         this.camera.position.set(0, 1.7, 0);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
+        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isLowEnd });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        const maxPixelRatio = this.isConsole ? 1 : (this.isMobile ? 1.5 : 2);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
-        this.renderer.shadowMap.enabled = !this.isMobile;
+        this.renderer.shadowMap.enabled = !this.isLowEnd;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.2;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
-        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
+        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isLowEnd);
 
         // Load level 1
         const levelData = this.levelManager.loadLevel(1);
@@ -119,7 +126,7 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        const maxPixelRatio = this.isConsole ? 1 : (this.isMobile ? 1.5 : 2);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     }
 
@@ -674,19 +681,20 @@ class Game {
         const cars = this.carManager.getCars();
         const playerPos = this.player.getPosition();
 
-        // Add sounds for new cars
-        cars.forEach(car => {
+        const activeCars = new Set(cars);
+
+        for (let i = 0; i < cars.length; i++) {
+            const car = cars[i];
             if (!this.carEngineSounds.has(car) && !car.isStealth) {
                 const sound = this.audioManager.playCarEngine(car);
                 if (sound) {
                     this.carEngineSounds.set(car, sound);
                 }
             }
-        });
+        }
 
-        // Update existing sounds and remove old ones
         this.carEngineSounds.forEach((sound, car) => {
-            if (!cars.includes(car)) {
+            if (!activeCars.has(car)) {
                 this.audioManager.stopCarEngine(sound);
                 this.carEngineSounds.delete(car);
             } else {

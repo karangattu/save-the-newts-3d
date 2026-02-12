@@ -15,7 +15,7 @@ export class CarManager {
     constructor(scene, roadCurve = null) {
         this.scene = scene;
         this.roadCurve = roadCurve;
-        
+
         this.cars = [];
 
         // Spawn settings
@@ -44,6 +44,10 @@ export class CarManager {
         // Car object pool
         this.carPool = new Map();
         this.initPool();
+
+        this._tmpNormal = new THREE.Vector3();
+        this._tmpLaneOffset = new THREE.Vector3();
+        this._tmpTargetPos = new THREE.Vector3();
     }
 
     createSharedMaterials() {
@@ -76,7 +80,7 @@ export class CarManager {
             })
         };
     }
-    
+
     setRoadCurve(roadCurve) {
         this.roadCurve = roadCurve;
     }
@@ -143,7 +147,7 @@ export class CarManager {
         if (rand < 0.92) return VEHICLE_TYPES.SEMI;
         return VEHICLE_TYPES.MOTORCYCLE;
     }
-    
+
     createVehicleMesh(isStealth, vehicleType) {
         switch (vehicleType) {
             case VEHICLE_TYPES.MOTORCYCLE:
@@ -346,7 +350,7 @@ export class CarManager {
 
         return group;
     }
-    
+
     createSUVMesh(isStealth) {
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
@@ -446,7 +450,7 @@ export class CarManager {
 
         return group;
     }
-    
+
     createTruckMesh(isStealth) {
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
@@ -546,7 +550,7 @@ export class CarManager {
 
         return group;
     }
-    
+
     createSemiMesh(isStealth) {
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
@@ -684,14 +688,14 @@ export class CarManager {
         this.addWheels(group, 1.2, 0.8, 0.42, -1);
         // Wheels - trailer back
         this.addWheels(group, 1.2, 0.8, 0.42, -3.5);
-        
+
         if (!isStealth) this.addHeadlights(group, 4.35, 0.9);
         this.addTaillights(group, isStealth, -6.52);
-        
+
         group.userData.isLarge = true;
         return group;
     }
-    
+
     createMotorcycleMesh(isStealth) {
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
@@ -787,7 +791,7 @@ export class CarManager {
         // Wheels (detailed with spokes implied by higher segments)
         const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.12, 20);
         const wheelMat = this.sharedMaterials.wheel;
-        
+
         const frontWheel = new THREE.Mesh(wheelGeo, wheelMat);
         frontWheel.rotation.z = Math.PI / 2;
         frontWheel.position.set(0, 0.35, 1.1);
@@ -811,7 +815,7 @@ export class CarManager {
 
         // Rider
         const riderMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-        
+
         // Lower body/legs
         const legsGeo = new THREE.BoxGeometry(0.3, 0.2, 0.5);
         const legs = new THREE.Mesh(legsGeo, riderMat);
@@ -827,7 +831,7 @@ export class CarManager {
 
         // Helmet
         const helmetGeo = new THREE.SphereGeometry(0.16, 10, 10);
-        const helmetMat = new THREE.MeshStandardMaterial({ 
+        const helmetMat = new THREE.MeshStandardMaterial({
             color: isStealth ? 0x050505 : (Math.random() > 0.5 ? 0x222222 : bodyColor),
             roughness: 0.25, metalness: 0.3
         });
@@ -848,21 +852,21 @@ export class CarManager {
             const headlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
             headlight.position.set(0, 0.72, 1.22);
             group.add(headlight);
-            
+
             const light = new THREE.SpotLight(0xffffee, 1.5, 25, 0.4, 0.5);
             light.position.set(0, 0.72, 1.22);
             light.target.position.set(0, 0, 15);
             group.add(light);
             group.add(light.target);
         }
-        
+
         // Taillight
         const taillightGeo = new THREE.BoxGeometry(0.15, 0.1, 0.05);
         const tailMat = isStealth ? this.sharedMaterials.taillightOff : this.sharedMaterials.taillightOn;
         const taillight = new THREE.Mesh(taillightGeo, tailMat);
         taillight.position.set(0, 0.62, -0.95);
         group.add(taillight);
-        
+
         // License plate (tiny detail)
         const plateGeo = new THREE.BoxGeometry(0.15, 0.08, 0.02);
         const plateMat = new THREE.MeshStandardMaterial({ color: 0xffffee, roughness: 0.5 });
@@ -879,7 +883,7 @@ export class CarManager {
     addSideMirrors(group, xOffset, yPos, zPos) {
         const armGeo = new THREE.BoxGeometry(0.3, 0.04, 0.04);
         const faceGeo = new THREE.BoxGeometry(0.06, 0.14, 0.12);
-        
+
         // Left mirror
         const armL = new THREE.Mesh(armGeo, this.sharedMaterials.rubber);
         armL.position.set(xOffset + 0.15, yPos, zPos);
@@ -896,18 +900,18 @@ export class CarManager {
         faceR.position.set(-xOffset - 0.32, yPos - 0.04, zPos);
         group.add(faceR);
     }
-    
+
     addWheels(group, xOffset, zOffset, radius = 0.35, zPos = 0) {
         const wheelGeo = new THREE.CylinderGeometry(radius, radius, 0.28, 20);
         const hubGeo = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, 0.3, 12);
-        
+
         const positions = [
             { x: xOffset, z: zPos + zOffset },
             { x: -xOffset, z: zPos + zOffset },
             { x: xOffset, z: zPos - zOffset },
             { x: -xOffset, z: zPos - zOffset }
         ];
-        
+
         positions.forEach(pos => {
             // Tire
             const wheel = new THREE.Mesh(wheelGeo, this.sharedMaterials.wheel);
@@ -922,47 +926,47 @@ export class CarManager {
             group.add(hub);
         });
     }
-    
+
     addHeadlights(group, zPos, yPos = 0.7) {
         const headlightGeo = new THREE.SphereGeometry(0.13, 10, 10);
-        
+
         const leftHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
         leftHeadlight.position.set(0.6, yPos, zPos);
         group.add(leftHeadlight);
-        
+
         const rightHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
         rightHeadlight.position.set(-0.6, yPos, zPos);
         group.add(rightHeadlight);
-        
+
         // Light beams
         const leftLight = new THREE.SpotLight(0xffffee, 2, 30, 0.4, 0.5);
         leftLight.position.set(0.6, yPos, zPos);
         leftLight.target.position.set(0.6, 0, zPos + 20);
         group.add(leftLight);
         group.add(leftLight.target);
-        
+
         const rightLight = new THREE.SpotLight(0xffffee, 2, 30, 0.4, 0.5);
         rightLight.position.set(-0.6, yPos, zPos);
         rightLight.target.position.set(-0.6, 0, zPos + 20);
         group.add(rightLight);
         group.add(rightLight.target);
     }
-    
+
     addTaillights(group, isStealth, zPos) {
         const taillightGeo = new THREE.BoxGeometry(0.28, 0.18, 0.05);
         const mat = isStealth ? this.sharedMaterials.taillightOff : this.sharedMaterials.taillightOn;
-        
+
         const leftTaillight = new THREE.Mesh(taillightGeo, mat);
         leftTaillight.position.set(0.7, 0.7, zPos);
         group.add(leftTaillight);
-        
+
         const rightTaillight = new THREE.Mesh(taillightGeo, mat);
         rightTaillight.position.set(-0.7, 0.7, zPos);
         group.add(rightTaillight);
     }
 
     // ─── SPAWNING & MOVEMENT ───────────────────────────────────────
-    
+
     spawnCar(elapsedTime) {
         // Determine if stealth car
         const elapsedMinutes = elapsedTime / 60;
@@ -976,13 +980,13 @@ export class CarManager {
         // Get random vehicle type
         const vehicleType = this.getRandomVehicleType();
         const mesh = this.acquireFromPool(vehicleType, isStealth);
-        
+
         // Random lane (-3 or 3 for two-lane road)
         const lane = Math.random() > 0.5 ? 3 : -3;
-        
+
         // Direction based on lane
         const direction = lane > 0 ? 1 : -1;
-        
+
         // Start at either end of the road curve
         let startT, startPoint, startTangent;
         if (direction > 0) {
@@ -990,7 +994,7 @@ export class CarManager {
         } else {
             startT = 1;
         }
-        
+
         if (this.roadCurve) {
             startPoint = this.roadCurve.getPoint(startT);
             startTangent = this.roadCurve.getTangent(startT);
@@ -998,24 +1002,24 @@ export class CarManager {
             startPoint = new THREE.Vector3(0, 0, direction > 0 ? -this.roadLength / 2 : this.roadLength / 2);
             startTangent = new THREE.Vector3(0, 0, direction > 0 ? 1 : -1);
         }
-        
+
         // Calculate lane offset (perpendicular to road direction)
         const normal = new THREE.Vector3(-startTangent.z, 0, startTangent.x).normalize();
         const laneOffset = normal.clone().multiplyScalar(lane);
         const finalPosition = startPoint.clone().add(laneOffset);
-        
+
         mesh.position.copy(finalPosition);
 
         // Rotate car to face direction of travel
         const angle = Math.atan2(startTangent.x, startTangent.z);
         mesh.rotation.y = angle + (direction > 0 ? 0 : Math.PI);
-        
+
         // Speed varies by vehicle type
         let baseSpeed = 8;
         if (vehicleType === VEHICLE_TYPES.MOTORCYCLE) baseSpeed = 12;
         if (vehicleType === VEHICLE_TYPES.SEMI) baseSpeed = 6;
         if (vehicleType === VEHICLE_TYPES.TRUCK) baseSpeed = 7;
-        
+
         const car = {
             mesh: mesh,
             lane: lane,
@@ -1027,70 +1031,70 @@ export class CarManager {
             curveT: startT,
             targetPosition: finalPosition.clone()
         };
-        
+
         this.cars.push(car);
     }
-    
+
     update(deltaTime, elapsedTime) {
         // Update spawn rate based on elapsed time
         const elapsedMinutes = elapsedTime / 60;
         const spawnInterval = this.baseSpawnInterval / ((1 + elapsedMinutes * 0.15) * this.difficultyMultiplier);
-        
+
         // Spawn timer
         this.spawnTimer += deltaTime;
         if (this.spawnTimer >= spawnInterval) {
             this.spawnCar(elapsedTime);
             this.spawnTimer = 0;
         }
-        
+
         // Update cooldown
         this.lastNearMiss += deltaTime;
-        
+
         // Update each car
         for (let i = this.cars.length - 1; i >= 0; i--) {
             const car = this.cars[i];
-            
+
             if (this.roadCurve) {
                 // Move along the curved road
                 const curveLength = this.roadCurve.getLength();
                 const moveDistance = car.speed * deltaTime;
                 const tDelta = moveDistance / curveLength;
-                
+
                 // Update curve position
                 car.curveT += car.direction * tDelta;
-                
+
                 // Check if car reached end of road
                 if (car.curveT > 1 || car.curveT < 0) {
                     this.releaseToPool(car);
                     this.cars.splice(i, 1);
                     continue;
                 }
-                
+
                 // Get new position on curve
                 const curvePoint = this.roadCurve.getPoint(car.curveT);
                 const tangent = this.roadCurve.getTangent(car.curveT);
-                
+
                 // Calculate lane offset
-                const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-                const laneOffset = normal.clone().multiplyScalar(car.lane);
-                const targetPosition = curvePoint.clone().add(laneOffset);
-                
+                this._tmpNormal.set(-tangent.z, 0, tangent.x).normalize();
+                this._tmpLaneOffset.copy(this._tmpNormal).multiplyScalar(car.lane);
+                this._tmpTargetPos.copy(curvePoint).add(this._tmpLaneOffset);
+
                 // Smooth movement
-                car.mesh.position.lerp(targetPosition, 0.3);
-                
+                car.mesh.position.lerp(this._tmpTargetPos, 0.3);
+
                 // Smooth rotation
                 const targetAngle = Math.atan2(tangent.x, tangent.z) + (car.direction > 0 ? 0 : Math.PI);
                 const currentRotation = car.mesh.rotation.y;
-                
+
                 let angleDiff = targetAngle - currentRotation;
                 while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
                 while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
                 car.mesh.rotation.y = currentRotation + angleDiff * 0.1;
-                
+
             } else {
                 // Fallback: straight road movement
                 car.mesh.position.z += car.direction * car.speed * deltaTime;
-                
+
                 const removeZ = this.roadLength / 2 + 20;
                 if (car.mesh.position.z > removeZ || car.mesh.position.z < -removeZ) {
                     this.releaseToPool(car);
@@ -1101,27 +1105,27 @@ export class CarManager {
     }
 
     // ─── COLLISION DETECTION ───────────────────────────────────────
-    
+
     checkCollision(playerBox) {
         for (const car of this.cars) {
             const carBox = this.getCarBoundingBox(car);
-            
+
             if (this.boxesIntersect(playerBox, carBox)) {
                 return { collision: true, isStealth: car.isStealth };
             }
         }
         return { collision: false };
     }
-    
+
     checkNearMiss(playerNearMissBox, playerCollisionBox) {
         if (this.lastNearMiss < this.nearMissCooldown) return null;
-        
+
         for (const car of this.cars) {
             if (car.hasTriggeredNearMiss) continue;
-            
+
             const carBox = this.getCarBoundingBox(car);
-            
-            if (this.boxesIntersect(playerNearMissBox, carBox) && 
+
+            if (this.boxesIntersect(playerNearMissBox, carBox) &&
                 !this.boxesIntersect(playerCollisionBox, carBox)) {
                 car.hasTriggeredNearMiss = true;
                 this.lastNearMiss = 0;
@@ -1130,13 +1134,13 @@ export class CarManager {
         }
         return null;
     }
-    
+
     getCarBoundingBox(car) {
         const pos = car.mesh.position;
-        
+
         let halfWidth = 1;
         let halfLength = 2;
-        
+
         if (car.vehicleType === VEHICLE_TYPES.MOTORCYCLE) {
             halfWidth = 0.3;
             halfLength = 1;
@@ -1150,7 +1154,7 @@ export class CarManager {
             halfWidth = 1.1;
             halfLength = 2.1;
         }
-        
+
         return {
             minX: pos.x - halfWidth,
             maxX: pos.x + halfWidth,
@@ -1158,22 +1162,22 @@ export class CarManager {
             maxZ: pos.z + halfLength
         };
     }
-    
+
     boxesIntersect(box1, box2) {
         return !(box1.maxX < box2.minX || box1.minX > box2.maxX ||
-                 box1.maxZ < box2.minZ || box1.minZ > box2.maxZ);
+            box1.maxZ < box2.minZ || box1.minZ > box2.maxZ);
     }
-    
+
     getCars() {
         return this.cars;
     }
-    
+
     checkNewtCollisions(newts) {
         const crushedNewts = [];
-        
+
         for (const car of this.cars) {
             const carBox = this.getCarBoundingBox(car);
-            
+
             for (const newt of newts) {
                 const newtPos = newt.mesh.position;
                 const newtBox = {
@@ -1182,16 +1186,16 @@ export class CarManager {
                     minZ: newtPos.z - 0.3,
                     maxZ: newtPos.z + 0.3
                 };
-                
+
                 if (this.boxesIntersect(carBox, newtBox)) {
                     crushedNewts.push(newt);
                 }
             }
         }
-        
+
         return crushedNewts;
     }
-    
+
     reset() {
         this.cars.forEach(car => {
             this.releaseToPool(car);

@@ -86,10 +86,10 @@ export class Player {
 
         const applyDeadZone = (v) => Math.abs(v) < GAMEPAD_DEAD_ZONE ? 0 : v;
 
-        this.gamepadMoveX = applyDeadZone(gp.axes[0]);
-        this.gamepadMoveY = applyDeadZone(gp.axes[1]);
-        this.gamepadLookX = applyDeadZone(gp.axes[2]);
-        this.gamepadLookY = applyDeadZone(gp.axes[3]);
+        this.gamepadLookX = applyDeadZone(gp.axes[0]);
+        this.gamepadLookY = applyDeadZone(gp.axes[1]);
+        this.gamepadMoveX = applyDeadZone(gp.axes[2]);
+        this.gamepadMoveY = applyDeadZone(gp.axes[3]);
 
         if (this.gamepadLookX !== 0 || this.gamepadLookY !== 0) {
             this.euler.setFromQuaternion(this.camera.quaternion);

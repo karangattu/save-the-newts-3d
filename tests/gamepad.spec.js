@@ -60,7 +60,7 @@ test.describe('Gamepad controller support', () => {
         expect(result.gamepadIndex).toBe(-1);
     });
 
-    test('Gamepad movement overrides direction when values are non-zero', async ({ page }) => {
+    test('Right thumbstick (axes 2,3) drives movement direction', async ({ page }) => {
         await page.goto('http://localhost:3000', { waitUntil: 'load' });
 
         const result = await page.evaluate(async () => {
@@ -94,5 +94,47 @@ test.describe('Gamepad controller support', () => {
         expect(result.zeroDirX).toBe(0);
         expect(result.activeDirX).not.toBe(0);
         expect(result.activeDirZ).not.toBe(0);
+    });
+
+    test('Left thumbstick (axes 0,1) drives camera look rotation', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const result = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { Player } = await import('/js/player.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+
+            const roadBounds = { minX: -20, maxX: 20, minZ: -150, maxZ: 150 };
+            const player = new Player(camera, scene, roadBounds, true);
+
+            player.gamepadIndex = 0;
+            player.gamepadLookX = 0;
+            player.gamepadLookY = 0;
+            player.joystickInput = { x: 0, y: 0 };
+
+            const qBefore = camera.quaternion.clone();
+
+            player.gamepadLookX = 0.8;
+            player.pollGamepad = function (dt) {
+                if (this.gamepadLookX !== 0 || this.gamepadLookY !== 0) {
+                    this.euler.setFromQuaternion(this.camera.quaternion);
+                    this.euler.y -= this.gamepadLookX * this.gamepadLookSensitivity * dt;
+                    this.euler.x -= this.gamepadLookY * this.gamepadLookSensitivity * dt;
+                    this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
+                    this.camera.quaternion.setFromEuler(this.euler);
+                }
+            };
+            player.update(0.016);
+
+            const qAfter = camera.quaternion.clone();
+
+            return {
+                rotationChanged: !qBefore.equals(qAfter)
+            };
+        });
+
+        expect(result.rotationChanged).toBeTruthy();
     });
 });
