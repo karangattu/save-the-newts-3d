@@ -345,25 +345,30 @@ export class NewtManager {
                 newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.7) * 0.003;
             }
 
-            newt.isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
+            const isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
 
-            // Update eye glow based on flashlight illumination
-            const eyes = newt.mesh.userData.eyes;
-            if (eyes) {
-                if (newt.isIlluminated) {
-                    eyes.left.material.color.setHex(0xDDAA20);
-                    eyes.left.material.emissive.setHex(0xFFCC00);
-                    eyes.left.material.emissiveIntensity = 0.8;
-                    eyes.right.material.color.setHex(0xDDAA20);
-                    eyes.right.material.emissive.setHex(0xFFCC00);
-                    eyes.right.material.emissiveIntensity = 0.8;
-                } else {
-                    eyes.left.material.color.setHex(0x222200);
-                    eyes.left.material.emissive.setHex(0x000000);
-                    eyes.left.material.emissiveIntensity = 0;
-                    eyes.right.material.color.setHex(0x222200);
-                    eyes.right.material.emissive.setHex(0x000000);
-                    eyes.right.material.emissiveIntensity = 0;
+            // Only update eye materials if illumination state changed
+            if (newt.isIlluminated !== isIlluminated) {
+                newt.isIlluminated = isIlluminated;
+
+                // Update eye glow based on flashlight illumination
+                const eyes = newt.mesh.userData.eyes;
+                if (eyes) {
+                    if (isIlluminated) {
+                        eyes.left.material.color.setHex(0xDDAA20);
+                        eyes.left.material.emissive.setHex(0xFFCC00);
+                        eyes.left.material.emissiveIntensity = 0.8;
+                        eyes.right.material.color.setHex(0xDDAA20);
+                        eyes.right.material.emissive.setHex(0xFFCC00);
+                        eyes.right.material.emissiveIntensity = 0.8;
+                    } else {
+                        eyes.left.material.color.setHex(0x222200);
+                        eyes.left.material.emissive.setHex(0x000000);
+                        eyes.left.material.emissiveIntensity = 0;
+                        eyes.right.material.color.setHex(0x222200);
+                        eyes.right.material.emissive.setHex(0x000000);
+                        eyes.right.material.emissiveIntensity = 0;
+                    }
                 }
             }
 
