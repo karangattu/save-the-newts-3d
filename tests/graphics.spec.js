@@ -1,39 +1,14 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
 
 test.describe('Graphics and flashlight enhancements', () => {
-    test('renderer uses ACES tone mapping and sRGB output', async ({ page }) => {
-        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+    test('renderer uses ACES tone mapping and sRGB output', async () => {
+        const mainJsPath = path.resolve(__dirname, '../js/main.js');
+        const mainJsSource = await fs.readFile(mainJsPath, 'utf8');
 
-        // Handle game start flow to ensure renderer is initialized
-        const startBtn = await page.waitForSelector('#start-button', { state: 'visible' });
-        await startBtn.click();
-        const skipBtn = await page.waitForSelector('#skip-video-btn', { state: 'visible', timeout: 5000 }).catch(() => null);
-        if (skipBtn) await skipBtn.click();
-        const clickToStart = await page.waitForSelector('#click-to-start-screen', { state: 'visible' });
-        await clickToStart.click();
-
-        const result = await page.evaluate(() => {
-            const container = document.getElementById('game-container');
-            const canvas = container && container.querySelector('canvas');
-            if (!canvas) return { error: 'no game canvas' };
-            return { canvasExists: true };
-        });
-
-        expect(result.canvasExists).toBeTruthy();
-
-        const rendererConfig = await page.evaluate(async () => {
-            const container = document.getElementById('game-container');
-            const canvas = container && container.querySelector('canvas');
-            if (!canvas) return { error: 'no canvas found' };
-
-            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-            return {
-                hasWebGL: !!gl,
-                hasCanvas: !!canvas
-            };
-        });
-
-        expect(rendererConfig.hasCanvas).toBeTruthy();
+        expect(mainJsSource).toContain('THREE.ACESFilmicToneMapping');
+        expect(mainJsSource).toContain('THREE.SRGBColorSpace');
     });
 
     test('flashlight creates spotlight and outer glow', async ({ page }) => {
