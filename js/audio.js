@@ -66,12 +66,12 @@ export class AudioManager {
     
     startFrogCroaking() {
         if (!this.isInitialized) return;
-        // Pacific tree frog "ribbit" - the iconic sound near Lexington Reservoir
+        // Pacific tree frog "ribbit" - reduced frequency for performance
         this.frogInterval = setInterval(() => {
-            if (Math.random() < 0.4) {
+            if (Math.random() < 0.3) {
                 this.playFrogCroak();
             }
-        }, 1200);
+        }, 1800); // Increased interval to reduce GC pressure
     }
     
     playFrogCroak() {
@@ -251,10 +251,10 @@ export class AudioManager {
         
         // Add occasional thunder rumble
         this.thunderInterval = setInterval(() => {
-            if (Math.random() < 0.1) { // 10% chance every few seconds
+            if (Math.random() < 0.08) { // Reduced chance to avoid buffer allocation spikes
                 this.playThunder();
             }
-        }, 8000);
+        }, 10000); // Increased interval to reduce performance impact
     }
     
     playThunder() {
@@ -328,10 +328,10 @@ export class AudioManager {
     }
     
     startCrickets(isClearNight = false) {
-        // Random cricket chirps - more frequent in clear night
-        const chirpChance = isClearNight ? 0.35 : 0.15;
-        const interval = isClearNight ? 400 : 800; // More frequent in clear night
-        
+        // Random cricket chirps - reduced frequency for better performance
+        const chirpChance = isClearNight ? 0.25 : 0.12;
+        const interval = isClearNight ? 800 : 1200; // Reduced frequency to avoid GC pressure
+
         this.cricketInterval = setInterval(() => {
             if (Math.random() < chirpChance) {
                 this.playCricketChirp();

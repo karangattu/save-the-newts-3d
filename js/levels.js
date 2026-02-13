@@ -31,6 +31,10 @@ export class LevelManager {
 
         // Moths (SF-realistic, not fireflies)
         this.moths = [];
+
+        // Frame skipping for performance
+        this.rainUpdateCounter = 0;
+        this.rainUpdateInterval = 3; // Update GPU buffer every 3 frames instead of every frame
     }
 
     loadLevel(levelNum) {
@@ -752,6 +756,13 @@ export class LevelManager {
     updateRain(deltaTime, cameraPosition) {
         if (!this.rain || !this.rainGeometry || this.currentLevel !== 3) return;
 
+        // Skip frames to reduce GPU buffer upload frequency
+        this.rainUpdateCounter++;
+        const shouldUpdateGPU = this.rainUpdateCounter >= this.rainUpdateInterval;
+        if (shouldUpdateGPU) {
+            this.rainUpdateCounter = 0;
+        }
+
         const positions = this.rainGeometry.attributes.position.array;
         const count = positions.length / 3;
 
@@ -770,18 +781,24 @@ export class LevelManager {
                 positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 120;
             }
         }
-        this.rainGeometry.attributes.position.needsUpdate = true;
 
-        // Choppy storm water
-        this.levelObjects.forEach(obj => {
-            if (obj.userData && obj.userData.isWater && obj.geometry && obj.geometry.attributes.position) {
-                const wp = obj.geometry.attributes.position.array;
-                for (let i = 0; i < wp.length / 3; i++) {
-                    wp[i * 3 + 2] = Math.sin(this.windTime * 2 + i * 0.3) * 0.3;
+        // Only update GPU buffer every N frames
+        if (shouldUpdateGPU) {
+            this.rainGeometry.attributes.position.needsUpdate = true;
+        }
+
+        // Choppy storm water - also skip frames
+        if (shouldUpdateGPU) {
+            this.levelObjects.forEach(obj => {
+                if (obj.userData && obj.userData.isWater && obj.geometry && obj.geometry.attributes.position) {
+                    const wp = obj.geometry.attributes.position.array;
+                    for (let i = 0; i < wp.length / 3; i++) {
+                        wp[i * 3 + 2] = Math.sin(this.windTime * 2 + i * 0.3) * 0.3;
+                    }
+                    obj.geometry.attributes.position.needsUpdate = true;
                 }
-                obj.geometry.attributes.position.needsUpdate = true;
-            }
-        });
+            });
+        }
     }
 
     createSplashParticle(x, z) {
