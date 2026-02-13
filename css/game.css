@@ -1590,6 +1590,29 @@ button:hover {
     font-size: 1rem;
 }
 
+.loading-progress-bar {
+    width: min(340px, 80vw);
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#loading-progress-fill {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ffd700, #ff8c00);
+    transition: width 0.2s ease;
+}
+
+#loading-progress-label {
+    margin-top: -8px;
+    font-size: 0.9rem;
+    color: #bbb;
+}
+
 /* Level Indicator */
 #level-indicator {
     position: fixed;

@@ -12,9 +12,11 @@ const VEHICLE_TYPES = {
 };
 
 export class CarManager {
-    constructor(scene, roadCurve = null) {
+    constructor(scene, roadCurve = null, options = {}) {
         this.scene = scene;
         this.roadCurve = roadCurve;
+        this.isLowEnd = !!options.isLowEnd;
+        this.enableDynamicLights = options.enableDynamicLights !== false;
 
         this.cars = [];
 
@@ -48,6 +50,9 @@ export class CarManager {
         this._tmpNormal = new THREE.Vector3();
         this._tmpLaneOffset = new THREE.Vector3();
         this._tmpTargetPos = new THREE.Vector3();
+
+        this.qualityLevel = this.isLowEnd ? 1 : 3;
+        this.maxCars = this.isLowEnd ? 7 : 14;
     }
 
     createSharedMaterials() {
@@ -87,6 +92,18 @@ export class CarManager {
 
     setDifficultyMultiplier(mult) {
         this.difficultyMultiplier = mult;
+    }
+
+    setQualityLevel(level) {
+        this.qualityLevel = Math.max(0, Math.min(3, level | 0));
+
+        if (this.qualityLevel <= 1) {
+            this.maxCars = this.isLowEnd ? 6 : 8;
+        } else if (this.qualityLevel === 2) {
+            this.maxCars = this.isLowEnd ? 8 : 11;
+        } else {
+            this.maxCars = this.isLowEnd ? 9 : 14;
+        }
     }
 
     initPool() {
@@ -928,6 +945,8 @@ export class CarManager {
     }
 
     addHeadlights(group, zPos, yPos = 0.7) {
+        if (!this.enableDynamicLights) return;
+
         const headlightGeo = new THREE.SphereGeometry(0.13, 10, 10);
 
         const leftHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
@@ -1042,7 +1061,7 @@ export class CarManager {
 
         // Spawn timer
         this.spawnTimer += deltaTime;
-        if (this.spawnTimer >= spawnInterval) {
+        if (this.spawnTimer >= spawnInterval && this.cars.length < this.maxCars) {
             this.spawnCar(elapsedTime);
             this.spawnTimer = 0;
         }

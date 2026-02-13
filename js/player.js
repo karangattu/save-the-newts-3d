@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
 const GAMEPAD_DEAD_ZONE = 0.15;
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 export class Player {
     constructor(camera, scene, roadBounds, isMobile = false) {
@@ -273,7 +276,7 @@ export class Player {
     }
 
     getPosition() {
-        return this.camera.position.clone();
+        return this.camera.position;
     }
 
     getCollisionBox() {
@@ -317,10 +320,11 @@ export class Player {
             if (this.gamepadMoveY !== 0) this.direction.z = -this.gamepadMoveY;
         }
 
-        const isMoving = this.direction.length() > 0.1;
+        const directionLengthSq = this.direction.lengthSq();
+        const isMoving = directionLengthSq > 0.01;
 
-        if (this.direction.length() > 0) {
-            this.direction.normalize();
+        if (directionLengthSq > 0) {
+            this.direction.multiplyScalar(1 / Math.sqrt(directionLengthSq));
         }
 
         // Apply movement
@@ -332,17 +336,14 @@ export class Player {
         }
 
         if (this.isMobile || (this.gamepadIndex >= 0 && (!this.controls || !this.controls.isLocked))) {
-            const forward = new THREE.Vector3();
-            const right = new THREE.Vector3();
+            this.camera.getWorldDirection(_forward);
+            _forward.y = 0;
+            _forward.normalize();
 
-            this.camera.getWorldDirection(forward);
-            forward.y = 0;
-            forward.normalize();
+            _right.crossVectors(_forward, _up);
 
-            right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-
-            this.camera.position.addScaledVector(forward, -this.velocity.z * deltaTime);
-            this.camera.position.addScaledVector(right, -this.velocity.x * deltaTime);
+            this.camera.position.addScaledVector(_forward, -this.velocity.z * deltaTime);
+            this.camera.position.addScaledVector(_right, -this.velocity.x * deltaTime);
         } else if (this.controls) {
             this.controls.moveRight(-this.velocity.x * deltaTime);
             this.controls.moveForward(-this.velocity.z * deltaTime);

@@ -7,6 +7,53 @@ export class PredatorManager {
         this.camera = camera;
         this.activePredator = null;
         this.attackAnimationId = null;
+        this.predatorPool = {
+            'mountain lion': [],
+            bear: []
+        };
+    }
+
+    prewarmPool() {
+        if (this.predatorPool['mountain lion'].length === 0) {
+            const lion = this.createMountainLion();
+            lion.visible = false;
+            this.scene.add(lion);
+            this.predatorPool['mountain lion'].push(lion);
+        }
+
+        if (this.predatorPool.bear.length === 0) {
+            const bear = this.createBear();
+            bear.visible = false;
+            this.scene.add(bear);
+            this.predatorPool.bear.push(bear);
+        }
+    }
+
+    acquirePredator(type) {
+        const key = type === 'mountain lion' ? 'mountain lion' : 'bear';
+        const pooled = this.predatorPool[key].pop();
+
+        if (pooled) {
+            pooled.visible = true;
+            return pooled;
+        }
+
+        return key === 'mountain lion' ? this.createMountainLion() : this.createBear();
+    }
+
+    releasePredator(predator) {
+        if (!predator) return;
+
+        predator.visible = false;
+        predator.position.set(0, 0, 0);
+        predator.rotation.set(0, 0, 0);
+
+        if (!predator.parent) {
+            this.scene.add(predator);
+        }
+
+        const key = predator.userData.type === 'mountain lion' ? 'mountain lion' : 'bear';
+        this.predatorPool[key].push(predator);
     }
     
     createMountainLion() {
@@ -226,13 +273,8 @@ export class PredatorManager {
     spawnPredator(type, playerPosition) {
         // Remove any existing predator
         this.removePredator();
-        
-        // Create predator based on type
-        if (type === 'mountain lion') {
-            this.activePredator = this.createMountainLion();
-        } else {
-            this.activePredator = this.createBear();
-        }
+
+        this.activePredator = this.acquirePredator(type);
         
         // Position predator in the forest, facing player
         const spawnDistance = 8;
@@ -248,7 +290,9 @@ export class PredatorManager {
         this.activePredator.lookAt(playerPosition.x, 0, playerPosition.z);
         this.activePredator.rotation.y += Math.PI; // Flip to face player
         
-        this.scene.add(this.activePredator);
+        if (!this.activePredator.parent) {
+            this.scene.add(this.activePredator);
+        }
         
         return this.activePredator;
     }
@@ -331,9 +375,9 @@ export class PredatorManager {
             cancelAnimationFrame(this.attackAnimationId);
             this.attackAnimationId = null;
         }
-        
+
         if (this.activePredator) {
-            this.scene.remove(this.activePredator);
+            this.releasePredator(this.activePredator);
             this.activePredator = null;
         }
     }

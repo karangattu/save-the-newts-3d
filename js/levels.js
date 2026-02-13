@@ -35,6 +35,35 @@ export class LevelManager {
         // Frame skipping for performance
         this.rainUpdateCounter = 0;
         this.rainUpdateInterval = 3; // Update GPU buffer every 3 frames instead of every frame
+        this.mothUpdateCounter = 0;
+
+        this.qualityLevel = isMobile ? 1 : 3;
+        this.rainActiveFraction = this.qualityLevel <= 1 ? 0.45 : 1;
+    }
+
+    setQualityLevel(level) {
+        this.qualityLevel = Math.max(0, Math.min(3, level | 0));
+
+        if (this.qualityLevel <= 1) {
+            this.rainUpdateInterval = 5;
+            this.rainActiveFraction = 0.45;
+        } else if (this.qualityLevel === 2) {
+            this.rainUpdateInterval = 4;
+            this.rainActiveFraction = 0.7;
+        } else {
+            this.rainUpdateInterval = 3;
+            this.rainActiveFraction = 1;
+        }
+    }
+
+    getDensityScale() {
+        if (this.qualityLevel <= 1) return 0.55;
+        if (this.qualityLevel === 2) return 0.75;
+        return 1;
+    }
+
+    getScaledCount(count) {
+        return Math.max(1, Math.floor(count * this.getDensityScale()));
     }
 
     loadLevel(levelNum) {
@@ -434,6 +463,7 @@ export class LevelManager {
 
     createTrees(count, side) {
         if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
         const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6);
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 });
         const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
@@ -472,6 +502,7 @@ export class LevelManager {
 
     createUnderbrush(count = 60) {
         if (this.isMobile) count = Math.floor(count * 0.4);
+        count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const x = -(15 + Math.random() * 30);
             const z = (Math.random() - 0.5) * 260;
@@ -496,6 +527,7 @@ export class LevelManager {
 
     createMoths(count = 15) {
         if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const mothGroup = new THREE.Group();
             const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
@@ -531,6 +563,7 @@ export class LevelManager {
 
     createBananaSlugs(count = 8) {
         if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const slugGroup = new THREE.Group();
             const body = new THREE.Mesh(
@@ -584,7 +617,7 @@ export class LevelManager {
     }
 
     createStars() {
-        const starCount = this.isMobile ? 300 : 800;
+        const starCount = this.getScaledCount(this.isMobile ? 300 : 800);
         const starGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
@@ -643,7 +676,7 @@ export class LevelManager {
         this.scene.add(horizon);
         this.levelObjects.push(horizon);
 
-        const starCount = this.isMobile ? 100 : 300;
+        const starCount = this.getScaledCount(this.isMobile ? 100 : 300);
         const starGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
@@ -702,7 +735,7 @@ export class LevelManager {
     }
 
     createPuddles() {
-        const puddleCount = this.isMobile ? 16 : 32;
+        const puddleCount = this.getScaledCount(this.isMobile ? 16 : 32);
         for (let i = 0; i < puddleCount; i++) {
             const puddle = new THREE.Mesh(
                 new THREE.CircleGeometry(0.5 + Math.random() * 1, 16),
@@ -717,7 +750,7 @@ export class LevelManager {
     }
 
     createRain() {
-        const rainCount = this.isMobile ? 3000 : 8000;
+        const rainCount = this.getScaledCount(this.isMobile ? 3000 : 8000);
         this.rainGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array(rainCount * 3);
         this.rainVelocities = new Float32Array(rainCount);
@@ -764,7 +797,8 @@ export class LevelManager {
         }
 
         const positions = this.rainGeometry.attributes.position.array;
-        const count = positions.length / 3;
+        const totalCount = positions.length / 3;
+        const count = Math.max(1, Math.floor(totalCount * this.rainActiveFraction));
 
         this.windTime += deltaTime;
         const windGust = Math.sin(this.windTime * 0.5) * 0.5 + 0.5;
@@ -851,6 +885,10 @@ export class LevelManager {
     }
 
     updateMoths(deltaTime) {
+        this.mothUpdateCounter++;
+        const mothUpdateInterval = this.qualityLevel <= 1 ? 2 : 1;
+        if (this.mothUpdateCounter % mothUpdateInterval !== 0) return;
+
         this.moths.forEach(moth => {
             moth.phase += deltaTime * moth.speed;
             moth.mesh.position.set(

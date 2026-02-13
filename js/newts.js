@@ -4,10 +4,11 @@ const _moveDir = new THREE.Vector3();
 const _scaledDir = new THREE.Vector3();
 
 export class NewtManager {
-    constructor(scene, flashlight, roadCurve = null) {
+    constructor(scene, flashlight, roadCurve = null, isLowEnd = false) {
         this.scene = scene;
         this.flashlight = flashlight;
         this.roadCurve = roadCurve;
+        this.isLowEnd = isLowEnd;
 
         this.newts = [];
         this.rescuedCount = 0;
@@ -30,6 +31,13 @@ export class NewtManager {
 
         // Newt pooling to avoid runtime allocations
         this.newtPool = [];
+
+        this.qualityLevel = isLowEnd ? 1 : 3;
+        this.maxActiveNewts = isLowEnd ? 8 : 14;
+        this.illuminationCheckInterval = isLowEnd ? 3 : 1;
+        this.illuminationCheckCounter = 0;
+
+        this._spawnDirection = new THREE.Vector3();
     }
 
     setRoadCurve(roadCurve) {
@@ -38,6 +46,9 @@ export class NewtManager {
 
     createNewtMesh() {
         const group = new THREE.Group();
+
+        const detail = this.qualityLevel <= 1 ? 6 : 8;
+        const capsuleSegments = this.qualityLevel <= 1 ? 3 : 4;
 
         // Simplified materials for better performance
         const bodyMaterial = new THREE.MeshStandardMaterial({
@@ -53,28 +64,28 @@ export class NewtManager {
         });
 
         // === SIMPLIFIED BODY - single capsule instead of multiple parts ===
-        const bodyGeometry = new THREE.CapsuleGeometry(0.15, 0.6, 4, 8);
+        const bodyGeometry = new THREE.CapsuleGeometry(0.15, 0.6, capsuleSegments, detail);
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
         body.rotation.z = Math.PI / 2;
         body.position.y = 0.12;
         group.add(body);
 
         // Simplified belly
-        const bellyGeometry = new THREE.CapsuleGeometry(0.12, 0.5, 4, 8);
+        const bellyGeometry = new THREE.CapsuleGeometry(0.12, 0.5, capsuleSegments, detail);
         const belly = new THREE.Mesh(bellyGeometry, bellyMaterial);
         belly.rotation.z = Math.PI / 2;
         belly.position.set(0, 0.08, 0);
         group.add(belly);
 
         // === SIMPLIFIED HEAD ===
-        const headGeometry = new THREE.SphereGeometry(0.14, 8, 8);
+        const headGeometry = new THREE.SphereGeometry(0.14, detail, detail);
         const head = new THREE.Mesh(headGeometry, bodyMaterial);
         head.scale.set(1.1, 0.7, 1.2);
         head.position.set(0.4, 0.12, 0);
         group.add(head);
 
         // Eyes - no emissive glow by default, only visible when flashlight hits them
-        const eyeGeometry = new THREE.SphereGeometry(0.04, 6, 6);
+        const eyeGeometry = new THREE.SphereGeometry(0.04, 5, 5);
         const eyeMaterial = new THREE.MeshStandardMaterial({
             color: 0x222200,
             emissive: 0x000000,
@@ -93,14 +104,14 @@ export class NewtManager {
         group.userData.eyes = { left: leftEye, right: rightEye };
 
         // === SIMPLIFIED TAIL - single cone instead of segments ===
-        const tailGeometry = new THREE.ConeGeometry(0.12, 0.6, 6);
+        const tailGeometry = new THREE.ConeGeometry(0.12, 0.6, detail);
         const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
         tail.rotation.z = Math.PI / 2;
         tail.position.set(-0.45, 0.1, 0);
         group.add(tail);
 
         // === SIMPLIFIED LEGS - basic capsules ===
-        const legGeometry = new THREE.CapsuleGeometry(0.04, 0.15, 4, 6);
+        const legGeometry = new THREE.CapsuleGeometry(0.04, 0.15, 3, detail);
 
         const createLeg = (x, z, isFront) => {
             const leg = new THREE.Mesh(legGeometry, bellyMaterial);
@@ -178,6 +189,21 @@ export class NewtManager {
         this.newtPool.push(mesh);
     }
 
+    prewarmPool(count) {
+        const targetCount = Math.max(0, count | 0);
+        while (this.newtPool.length < targetCount) {
+            const mesh = this.createNewtMesh();
+            mesh.visible = false;
+            this.newtPool.push(mesh);
+        }
+    }
+
+    setQualityLevel(level) {
+        this.qualityLevel = Math.max(0, Math.min(3, level | 0));
+        this.maxActiveNewts = this.qualityLevel <= 1 ? 8 : (this.qualityLevel === 2 ? 11 : 14);
+        this.illuminationCheckInterval = this.qualityLevel <= 1 ? 3 : (this.qualityLevel === 2 ? 2 : 1);
+    }
+
     spawnNewt() {
         const mesh = this.getNewtFromPool();
         if (!mesh.parent) {
@@ -211,8 +237,8 @@ export class NewtManager {
 
         mesh.position.copy(startPosition);
 
-        const direction = new THREE.Vector3().subVectors(targetPosition, startPosition).normalize();
-        mesh.rotation.y = Math.atan2(direction.x, direction.z);
+        this._spawnDirection.subVectors(targetPosition, startPosition).normalize();
+        mesh.rotation.y = Math.atan2(this._spawnDirection.x, this._spawnDirection.z);
 
         const newt = {
             mesh: mesh,
@@ -267,9 +293,15 @@ export class NewtManager {
 
         this.spawnTimer += deltaTime;
         if (this.spawnTimer >= spawnInterval) {
-            this.spawnNewt();
+            if (this.newts.length < this.maxActiveNewts) {
+                this.spawnNewt();
+            }
             this.spawnTimer = 0;
         }
+
+        this.illuminationCheckCounter++;
+        const shouldCheckIllumination =
+            this.illuminationCheckCounter % this.illuminationCheckInterval === 0;
 
         const rescuedNewts = [];
 
@@ -345,7 +377,9 @@ export class NewtManager {
                 newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.7) * 0.003;
             }
 
-            const isIlluminated = this.flashlight.isPointIlluminated(newt.mesh.position);
+            const isIlluminated = shouldCheckIllumination
+                ? this.flashlight.isPointIlluminated(newt.mesh.position)
+                : newt.isIlluminated;
 
             // Only update eye materials if illumination state changed
             if (newt.isIlluminated !== isIlluminated) {

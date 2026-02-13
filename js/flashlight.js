@@ -31,6 +31,7 @@ export class Flashlight {
         this.currentIntensity = this.maxIntensity;
         this.targetIntensity = this.maxIntensity;
         this.currentColorTemp = 0;
+        this.qualityLevel = isMobile ? 1 : 3;
 
         this.init();
     }
@@ -74,6 +75,8 @@ export class Flashlight {
         if (!this.isMobile) {
             this.createVolumetricCone();
         }
+
+        this.setQualityLevel(this.qualityLevel);
     }
 
     createVolumetricCone() {
@@ -173,8 +176,9 @@ export class Flashlight {
         this.fillLight.color.copy(this.spotlight.color);
 
         const glowBase = this.isMobile ? 3 : 2;
+        const glowScale = this.qualityLevel <= 1 ? 0.45 : (this.qualityLevel === 2 ? 0.75 : 1);
         this.outerGlow.intensity = this.isOn && this.battery > 0
-            ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity)
+            ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity) * glowScale
             : 0;
         this.outerGlow.color.copy(this.spotlight.color);
 
@@ -182,9 +186,28 @@ export class Flashlight {
             const baseOpacity = this.isOn && this.battery > 0
                 ? 0.035 * (this.battery / 100) * (this.currentIntensity / this.maxIntensity)
                 : 0;
-            this.coneMaterial.opacity = baseOpacity;
+            this.coneMaterial.opacity = this.qualityLevel <= 1 ? 0 : baseOpacity;
             this.coneMaterial.color.copy(this.spotlight.color);
-            this.volumetricCone.visible = baseOpacity > 0.001;
+            this.volumetricCone.visible = this.qualityLevel > 1 && baseOpacity > 0.001;
+        }
+    }
+
+    setQualityLevel(level) {
+        this.qualityLevel = Math.max(0, Math.min(3, level | 0));
+
+        const shadowEnabled = !this.isMobile && this.qualityLevel >= 2;
+        this.spotlight.castShadow = shadowEnabled;
+
+        const shadowSize = this.qualityLevel <= 1 ? 256 : 512;
+        this.spotlight.shadow.mapSize.width = shadowSize;
+        this.spotlight.shadow.mapSize.height = shadowSize;
+
+        this.outerGlow.distance = this.qualityLevel <= 1
+            ? (this.isMobile ? 24 : 20)
+            : (this.isMobile ? 35 : 30);
+
+        if (this.volumetricCone) {
+            this.volumetricCone.visible = this.qualityLevel > 1;
         }
     }
 

@@ -23,6 +23,18 @@ class Game {
         this.isLowEnd = false;
         this.isVisibilityPaused = false;
 
+        // Performance & preloading
+        this.qualityLevel = 3;
+        this.minQualityLevel = 0;
+        this.maxQualityLevel = 3;
+        this.minPixelRatio = 0.7;
+        this.currentPixelRatio = 1;
+        this.qualityAdjustmentCooldown = 0;
+        this.frameTimeSamples = [];
+        this.preloadProgress = 0;
+        this.preloadPromise = null;
+        this.assetsPreloaded = false;
+
         // Level tracking
         this.currentLevel = 1;
         this.levelScore = 0; // Score within current level
@@ -52,7 +64,11 @@ class Game {
         // Create UI first to detect mobile
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
-        this.isLowEnd = this.isMobile || this.isConsole;
+        this.isLowEnd = this.detectLowEndDevice();
+
+        this.qualityLevel = this.isLowEnd ? 1 : 3;
+        this.maxQualityLevel = this.isMobile ? 2 : 3;
+        this.minPixelRatio = this.isMobile ? 0.6 : 0.75;
 
         // Create scene renderer and camera first
         this.scene = new THREE.Scene();
@@ -66,8 +82,11 @@ class Game {
 
         this.renderer = new THREE.WebGLRenderer({ antialias: !this.isLowEnd });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isConsole ? 1 : (this.isMobile ? 1.5 : 2);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.currentPixelRatio = Math.min(
+            window.devicePixelRatio,
+            this.getQualityPixelRatioCap(this.qualityLevel)
+        );
+        this.renderer.setPixelRatio(this.currentPixelRatio);
         this.renderer.shadowMap.enabled = !this.isLowEnd;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -76,6 +95,7 @@ class Game {
 
         // Create level manager
         this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isLowEnd);
+        this.levelManager.setQualityLevel(this.qualityLevel);
 
         // Load level 1
         const levelData = this.levelManager.loadLevel(1);
@@ -101,13 +121,19 @@ class Game {
         this.newtManager = new NewtManager(
             this.scene,
             this.flashlight,
-            this.roadCurve
+            this.roadCurve,
+            this.isLowEnd
         );
 
-        this.carManager = new CarManager(this.scene, this.roadCurve);
+        this.carManager = new CarManager(this.scene, this.roadCurve, {
+            isLowEnd: this.isLowEnd,
+            enableDynamicLights: !this.isLowEnd
+        });
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
         this.predatorManager = new PredatorManager(this.scene, this.camera);
+
+        this.applyQualityLevel(this.qualityLevel);
 
         // Setup flashlight toggle callbacks
         this.setupFlashlightToggle();
@@ -126,8 +152,11 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isConsole ? 1 : (this.isMobile ? 1.5 : 2);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.currentPixelRatio = Math.min(
+            window.devicePixelRatio,
+            this.getQualityPixelRatioCap(this.qualityLevel)
+        );
+        this.renderer.setPixelRatio(this.currentPixelRatio);
     }
 
     setupFlashlightToggle() {
@@ -192,26 +221,21 @@ class Game {
     }
 
     showIntroVideo() {
+        this.ensureAssetsPreloaded();
+
         // Show the intro video screen
         this.ui.showVideoScreen();
     }
 
     async startGameWithLoading() {
-        this.ui.showLoadingScreen('Loading Game...');
+        this.ui.showLoadingScreen('Optimizing Performance...');
+        this.ui.updateLoadingProgress(this.preloadProgress, 'Optimizing Performance...');
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await this.sleep(80);
+        await this.ensureAssetsPreloaded();
 
-        this.carManager.carPool.forEach(pool => {
-            pool.meshes.forEach(m => { m.visible = true; });
-        });
-
-        this.renderer.compile(this.scene, this.camera);
-
-        this.carManager.carPool.forEach(pool => {
-            pool.meshes.forEach(m => { m.visible = false; });
-        });
-
-        await new Promise(resolve => setTimeout(resolve, 200));
+        this.ui.updateLoadingProgress(100, 'Ready');
+        await this.sleep(140);
 
         this.ui.showClickToStartScreen();
     }
@@ -266,6 +290,8 @@ class Game {
 
         // Set state
         this.state = 'playing';
+        this.frameTimeSamples = [];
+        this.qualityAdjustmentCooldown = 2;
     }
 
     async startGame() {
@@ -781,7 +807,8 @@ class Game {
         requestAnimationFrame(() => this.animate());
 
         const currentTime = performance.now() / 1000;
-        let deltaTime = Math.min(currentTime - this.lastTime, 0.1);
+        const rawDelta = Math.min(currentTime - this.lastTime, 0.1);
+        let deltaTime = rawDelta;
 
         if (this.smoothedDeltaTime === undefined) {
             this.smoothedDeltaTime = deltaTime;
@@ -797,8 +824,191 @@ class Game {
 
         this.pollGamepadUI();
         this.update(deltaTime);
+        this.updateAdaptiveQuality(rawDelta);
 
         this.renderer.render(this.scene, this.camera);
+    }
+
+    detectLowEndDevice() {
+        const cores = navigator.hardwareConcurrency || 4;
+        const memory = navigator.deviceMemory || 4;
+        return this.isMobile || this.isConsole || cores <= 4 || memory <= 4;
+    }
+
+    getQualityPixelRatioCap(level) {
+        const clampedLevel = Math.max(0, Math.min(3, level | 0));
+        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.35 : 2);
+        const qualityScale = [0.65, 0.82, 1, 1.12];
+        return Math.max(this.minPixelRatio, baseCap * qualityScale[clampedLevel]);
+    }
+
+    applyQualityLevel(level) {
+        const clampedLevel = Math.max(this.minQualityLevel, Math.min(this.maxQualityLevel, level | 0));
+        this.qualityLevel = clampedLevel;
+
+        if (this.renderer) {
+            this.currentPixelRatio = Math.min(
+                window.devicePixelRatio,
+                this.getQualityPixelRatioCap(clampedLevel)
+            );
+            this.renderer.setPixelRatio(this.currentPixelRatio);
+            this.renderer.shadowMap.enabled = clampedLevel >= 2 && !this.isLowEnd;
+        }
+
+        if (this.levelManager) this.levelManager.setQualityLevel(clampedLevel);
+        if (this.newtManager) this.newtManager.setQualityLevel(clampedLevel);
+        if (this.carManager) this.carManager.setQualityLevel(clampedLevel);
+        if (this.flashlight) this.flashlight.setQualityLevel(clampedLevel);
+    }
+
+    updateAdaptiveQuality(rawDelta) {
+        if (this.state !== 'playing') return;
+
+        const frameMs = rawDelta * 1000;
+        this.frameTimeSamples.push(frameMs);
+        if (this.frameTimeSamples.length > 45) {
+            this.frameTimeSamples.shift();
+        }
+
+        if (this.qualityAdjustmentCooldown > 0) {
+            this.qualityAdjustmentCooldown -= rawDelta;
+            return;
+        }
+
+        if (this.frameTimeSamples.length < 45) return;
+
+        const total = this.frameTimeSamples.reduce((sum, value) => sum + value, 0);
+        const avgMs = total / this.frameTimeSamples.length;
+
+        if (avgMs > 24 && this.qualityLevel > this.minQualityLevel) {
+            this.applyQualityLevel(this.qualityLevel - 1);
+            this.qualityAdjustmentCooldown = 6;
+            this.frameTimeSamples = [];
+        } else if (avgMs < 14 && this.qualityLevel < this.maxQualityLevel) {
+            this.applyQualityLevel(this.qualityLevel + 1);
+            this.qualityAdjustmentCooldown = 8;
+            this.frameTimeSamples = [];
+        }
+    }
+
+    updatePreloadProgress(progress, text) {
+        this.preloadProgress = Math.max(0, Math.min(100, Math.round(progress)));
+        this.ui.updateLoadingProgress(this.preloadProgress, text);
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async ensureAssetsPreloaded() {
+        if (this.assetsPreloaded) return;
+        if (this.preloadPromise) return this.preloadPromise;
+
+        this.preloadPromise = this.preloadAssets().finally(() => {
+            this.preloadPromise = null;
+        });
+
+        return this.preloadPromise;
+    }
+
+    async preloadAssets() {
+        if (this.assetsPreloaded) return;
+
+        const originalLevel = this.currentLevel;
+        const steps = [
+            {
+                text: 'Prewarming object pools...',
+                run: async () => {
+                    this.newtManager.prewarmPool(this.isLowEnd ? 8 : 14);
+                    this.predatorManager.prewarmPool();
+                    await this.sleep(16);
+                }
+            },
+            {
+                text: 'Precompiling vehicles and creatures...',
+                run: async () => {
+                    await this.warmVehicleAndCreatureShaders();
+                }
+            },
+            {
+                text: 'Precompiling all level environments...',
+                run: async () => {
+                    for (let level = 1; level <= 3; level++) {
+                        const levelData = this.levelManager.loadLevel(level);
+                        this.roadCurve = levelData.roadCurve;
+                        this.roadBounds = levelData.roadBounds;
+                        this.player.roadBounds = this.roadBounds;
+                        this.newtManager.setRoadCurve(this.roadCurve);
+                        this.carManager.setRoadCurve(this.roadCurve);
+
+                        this.renderer.compile(this.scene, this.camera);
+                        this.renderer.render(this.scene, this.camera);
+                        await this.sleep(18);
+                    }
+                }
+            },
+            {
+                text: 'Finalizing optimization...',
+                run: async () => {
+                    const levelData = this.levelManager.loadLevel(originalLevel);
+                    this.roadCurve = levelData.roadCurve;
+                    this.roadBounds = levelData.roadBounds;
+                    this.player.roadBounds = this.roadBounds;
+                    this.newtManager.setRoadCurve(this.roadCurve);
+                    this.carManager.setRoadCurve(this.roadCurve);
+
+                    this.player.reset();
+                    this.newtManager.reset();
+                    this.carManager.reset();
+                    this.predatorManager.reset();
+                    this.flashlight.reset();
+
+                    await this.sleep(16);
+                }
+            }
+        ];
+
+        for (let i = 0; i < steps.length; i++) {
+            const startProgress = Math.round((i / steps.length) * 100);
+            this.updatePreloadProgress(startProgress, steps[i].text);
+            await steps[i].run();
+            const endProgress = Math.round(((i + 1) / steps.length) * 100);
+            this.updatePreloadProgress(endProgress, steps[i].text);
+        }
+
+        this.assetsPreloaded = true;
+        this.updatePreloadProgress(100, 'Ready');
+    }
+
+    async warmVehicleAndCreatureShaders() {
+        this.carManager.carPool.forEach(pool => {
+            pool.meshes.forEach(mesh => {
+                mesh.visible = true;
+            });
+        });
+
+        const previewNewt = this.newtManager.getNewtFromPool();
+        previewNewt.visible = true;
+        previewNewt.position.set(0, 0, 3);
+        if (!previewNewt.parent) this.scene.add(previewNewt);
+
+        const previewLion = this.predatorManager.acquirePredator('mountain lion');
+        previewLion.position.set(2.5, 0, 5);
+        if (!previewLion.parent) this.scene.add(previewLion);
+
+        this.renderer.compile(this.scene, this.camera);
+        this.renderer.render(this.scene, this.camera);
+
+        this.newtManager.releaseNewtMesh(previewNewt);
+        this.predatorManager.releasePredator(previewLion);
+
+        this.carManager.carPool.forEach(pool => {
+            pool.meshes.forEach(mesh => {
+                mesh.visible = false;
+            });
+        });
+
+        await this.sleep(16);
     }
 }
 

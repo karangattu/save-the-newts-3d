@@ -130,11 +130,17 @@ export class UIManager {
                 </div>
                 <h2 id="loading-text">Loading...</h2>
                 <p class="loading-subtitle">Preparing the rescue mission</p>
+                <div class="loading-progress-bar">
+                    <div id="loading-progress-fill"></div>
+                </div>
+                <p id="loading-progress-label">0%</p>
             </div>
         `;
         document.body.appendChild(loadingScreen);
         this.loadingScreen = loadingScreen;
         this.loadingText = document.getElementById('loading-text');
+        this.loadingProgressFill = document.getElementById('loading-progress-fill');
+        this.loadingProgressLabel = document.getElementById('loading-progress-label');
     }
 
     createClickToStartScreen() {
@@ -245,11 +251,28 @@ export class UIManager {
         this.loadingText.textContent = text;
         this.loadingScreen.classList.remove('hidden');
         this.hideGameScreen();
+        this.updateLoadingProgress(0);
     }
 
     hideLoadingScreen() {
         this.loadingScreen.classList.add('hidden');
         this.showGameScreen();
+    }
+
+    updateLoadingProgress(progress = 0, text = '') {
+        const clamped = Math.max(0, Math.min(100, Math.round(progress)));
+
+        if (this.loadingProgressFill) {
+            this.loadingProgressFill.style.width = `${clamped}%`;
+        }
+
+        if (this.loadingProgressLabel) {
+            this.loadingProgressLabel.textContent = `${clamped}%`;
+        }
+
+        if (text && this.loadingText) {
+            this.loadingText.textContent = text;
+        }
     }
 
     updateLevel(level) {
