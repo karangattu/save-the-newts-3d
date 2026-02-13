@@ -80,17 +80,22 @@ class Game {
         );
         this.camera.position.set(0, 1.7, 0);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isLowEnd });
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: !this.isLowEnd,
+            powerPreference: 'high-performance',
+            stencil: false
+        });
+        this.renderer.physicallyCorrectLights = true; // more realistic light falloff
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.currentPixelRatio = Math.min(
             window.devicePixelRatio,
             this.getQualityPixelRatioCap(this.qualityLevel)
         );
         this.renderer.setPixelRatio(this.currentPixelRatio);
-        this.renderer.shadowMap.enabled = !this.isLowEnd;
+        this.renderer.shadowMap.enabled = !this.isLowEnd && this.qualityLevel >= 2;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.2;
+        this.renderer.toneMappingExposure = this.isLowEnd ? 1.05 : 1.2;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
@@ -398,6 +403,12 @@ class Game {
         // Update player
         this.player.reset();
         this.player.roadBounds = this.roadBounds;
+        const nextSpawn = this.levelManager.getRoadDataAtZ(0);
+        this.camera.position.set(
+            nextSpawn.point.x,
+            this.player.playerHeight,
+            nextSpawn.point.z
+        );
 
         // Update managers
         this.newtManager.reset();
@@ -857,7 +868,7 @@ class Game {
 
     getQualityPixelRatioCap(level) {
         const clampedLevel = Math.max(0, Math.min(3, level | 0));
-        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.35 : 2);
+        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.2 : 1.6);
         const qualityScale = [0.65, 0.82, 1, 1.12];
         return Math.max(this.minPixelRatio, baseCap * qualityScale[clampedLevel]);
     }

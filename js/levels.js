@@ -508,20 +508,29 @@ export class LevelManager {
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
 
+        const roadHalfWidth = this.roadWidth / 2;
+        const safeOffset = roadHalfWidth + 4; // keep foliage off the shoulder
+
         for (let i = 0; i < count; i++) {
-            const x = side * (20 + Math.random() * 35);
-            const z = (Math.random() - 0.5) * (this.roadLength - 40);
+            const roadZ = (Math.random() - 0.5) * (this.roadLength - 40);
+            const roadData = this.getRoadDataAtZ(roadZ);
+            const sideDir = side || (Math.random() > 0.5 ? 1 : -1);
+            const lateral = safeOffset + Math.random() * 18;
+
+            const basePos = roadData.point.clone().add(roadData.normal.clone().multiplyScalar(sideDir * lateral));
             const height = 5 + Math.random() * 10;
             const trunkH = height * 0.4;
             const radius = 2 + Math.random() * 3;
 
-            position.set(x, trunkH / 2, z);
+            position.copy(basePos);
+            position.y = trunkH / 2;
             quaternion.identity();
             scale.set(1, trunkH, 1);
             matrix.compose(position, quaternion, scale);
             trunkMesh.setMatrixAt(i, matrix);
 
-            position.set(x, trunkH + (height * 0.35), z);
+            position.copy(basePos);
+            position.y = trunkH + (height * 0.35);
             scale.set(radius, height * 0.7, radius);
             matrix.compose(position, quaternion, scale);
             foliageMesh.setMatrixAt(i, matrix);
@@ -535,9 +544,15 @@ export class LevelManager {
     createUnderbrush(count = 60) {
         if (this.isMobile) count = Math.floor(count * 0.4);
         count = this.getScaledCount(count);
+        const roadHalfWidth = this.roadWidth / 2;
+        const safeOffset = roadHalfWidth + 3;
+
         for (let i = 0; i < count; i++) {
-            const x = -(15 + Math.random() * 30);
-            const z = (Math.random() - 0.5) * (this.roadLength - 60);
+            const roadZ = (Math.random() - 0.5) * (this.roadLength - 60);
+            const roadData = this.getRoadDataAtZ(roadZ);
+            const lateral = safeOffset + Math.random() * 12;
+            const basePos = roadData.point.clone().add(roadData.normal.clone().multiplyScalar(-1 * lateral));
+
             const fernGroup = new THREE.Group();
             const fronds = 3 + Math.floor(Math.random() * 3);
             for (let f = 0; f < fronds; f++) {
@@ -550,7 +565,7 @@ export class LevelManager {
                 frond.position.y = 0.4;
                 fernGroup.add(frond);
             }
-            fernGroup.position.set(x, 0, z);
+            fernGroup.position.copy(basePos);
             fernGroup.scale.setScalar(0.5 + Math.random() * 0.3);
             this.scene.add(fernGroup);
             this.levelObjects.push(fernGroup);
