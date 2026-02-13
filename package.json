@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "npx playwright test --project=chromium --reporter=list",
+    "test": "npm run test:e2e",
+    "test:unit": "vitest run tests/unit",
+    "test:e2e": "npx playwright test --project=chromium --reporter=list",
     "test:headed": "npx playwright test --project=chromium --headed",
     "start": "npx http-server -p 3000 -c-1"
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",
     "http-server": "^14.1.1",
+    "three": "^0.181.1",
+    "vitest": "^4.0.18",
     "wait-on": "^7.0.1"
   }
 }
