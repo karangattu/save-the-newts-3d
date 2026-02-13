@@ -51,7 +51,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Run audio smoke tests (Playwright)
+      - name: Run smoke tests (Playwright)
         run: npm test
         env:
           CI: true
