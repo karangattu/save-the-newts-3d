@@ -11,6 +11,15 @@ export class LevelManager {
         this.isMobile = isMobile;
         this.currentLevel = 1;
 
+        this.roadWidth = 12;
+        this.roadLength = 520;
+        this.roadCurveExtents = {
+            minX: -20,
+            maxX: 20,
+            minZ: -this.roadLength / 2,
+            maxZ: this.roadLength / 2
+        };
+
         this.levelObjects = [];
         this.roadCurve = null;
         this.dangerZones = null;
@@ -112,21 +121,38 @@ export class LevelManager {
 
     // ==================== ALMA BRIDGE ROAD CURVE (same for all 3 levels) ====================
     createAlmaBridgeRoadCurve() {
-        const roadLength = 300;
-        // S-curves matching Alma Bridge Rd near Lexington Reservoir from the map
+        const roadLength = this.roadLength;
+        // Expanded winding shape with multiple bends for longer exploration.
         const curvePoints = [
-            new THREE.Vector3(-15, 0, -roadLength / 2),
-            new THREE.Vector3(-8, 0, -roadLength / 2 + 30),
-            new THREE.Vector3(2, 0, -roadLength / 2 + 60),
-            new THREE.Vector3(10, 0, -roadLength / 2 + 90),
-            new THREE.Vector3(6, 0, -roadLength / 2 + 120),
-            new THREE.Vector3(-2, 0, -roadLength / 2 + 150),
-            new THREE.Vector3(-8, 0, -roadLength / 2 + 180),
-            new THREE.Vector3(-4, 0, -roadLength / 2 + 210),
-            new THREE.Vector3(5, 0, -roadLength / 2 + 240),
-            new THREE.Vector3(12, 0, -roadLength / 2 + 270),
-            new THREE.Vector3(8, 0, roadLength / 2),
+            new THREE.Vector3(-18, 0, -roadLength / 2),
+            new THREE.Vector3(-6, 0, -220),
+            new THREE.Vector3(14, 0, -180),
+            new THREE.Vector3(24, 0, -140),
+            new THREE.Vector3(8, 0, -100),
+            new THREE.Vector3(-12, 0, -60),
+            new THREE.Vector3(-24, 0, -20),
+            new THREE.Vector3(-10, 0, 20),
+            new THREE.Vector3(12, 0, 60),
+            new THREE.Vector3(26, 0, 100),
+            new THREE.Vector3(10, 0, 140),
+            new THREE.Vector3(-14, 0, 180),
+            new THREE.Vector3(-2, 0, 220),
+            new THREE.Vector3(18, 0, 250),
+            new THREE.Vector3(6, 0, roadLength / 2),
         ];
+
+        this.roadCurveExtents = curvePoints.reduce((acc, point) => ({
+            minX: Math.min(acc.minX, point.x),
+            maxX: Math.max(acc.maxX, point.x),
+            minZ: Math.min(acc.minZ, point.z),
+            maxZ: Math.max(acc.maxZ, point.z)
+        }), {
+            minX: Infinity,
+            maxX: -Infinity,
+            minZ: Infinity,
+            maxZ: -Infinity
+        });
+
         this.roadCurve = new THREE.CatmullRomCurve3(curvePoints);
         this.roadCurve.tension = 0.4;
         return this.roadCurve;
@@ -315,8 +341,9 @@ export class LevelManager {
         const roadWidth = 12;
 
         // Newt crossing signs along road
-        for (let i = 0; i < 6; i++) {
-            const t = 0.1 + (i * 0.15);
+        const signCount = Math.max(8, Math.floor(this.roadLength / 65));
+        for (let i = 0; i < signCount; i++) {
+            const t = 0.08 + (i * (0.84 / Math.max(1, signCount - 1)));
             if (t > 0.95) break;
             const point = this.roadCurve.getPoint(t);
             const tangent = this.roadCurve.getTangent(t);
@@ -343,17 +370,20 @@ export class LevelManager {
         this.createStopSign(sp2.x, sp2.z, ea + Math.PI);
 
         // Cliff warning signs
-        for (let z = -120; z <= 120; z += 40) {
+        const warningStart = -this.roadLength / 2 + 40;
+        const warningEnd = this.roadLength / 2 - 40;
+        for (let z = warningStart; z <= warningEnd; z += 55) {
             this.createWarningSign(20, z);
         }
     }
 
     // ==================== SHARED ROAD CREATION ====================
     createRoad(wetness = 0) {
-        const roadWidth = 12;
+        const roadWidth = this.roadWidth;
         this.createAlmaBridgeRoadCurve();
 
-        const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 250);
+        const roadSegments = Math.max(250, Math.floor(this.roadLength * 0.8));
+        const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, roadSegments);
         const roadMaterial = new THREE.MeshStandardMaterial({
             color: wetness > 0 ? 0x1a1a1a : 0x2a2a2a,
             roughness: wetness > 0 ? 0.2 : 0.4,
@@ -369,10 +399,12 @@ export class LevelManager {
 
         this.createRoadMarkings(roadWidth);
 
-        const roadLength = 300;
+        const roadLength = this.roadLength;
+        const minX = this.roadCurveExtents.minX - 24;
+        const maxX = this.roadCurveExtents.maxX + 24;
         this.roadBounds = {
-            minX: -40,
-            maxX: 35,
+            minX,
+            maxX,
             minZ: -roadLength / 2 + 10,
             maxZ: roadLength / 2 - 10
         };
@@ -381,7 +413,7 @@ export class LevelManager {
 
     createRoadMarkings(roadWidth) {
         const edgeLinePoints = [];
-        const steps = 120;
+        const steps = Math.max(120, Math.floor(this.roadLength / 2));
 
         for (let i = 0; i <= steps; i++) {
             const t = i / steps;
@@ -396,20 +428,20 @@ export class LevelManager {
         const rightEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 1));
         const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
 
-        const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, 120, 0.08, 4, false), lineMaterial);
+        const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, steps, 0.08, 4, false), lineMaterial);
         leftLine.position.y = 0.02;
         this.scene.add(leftLine);
         this.levelObjects.push(leftLine);
 
-        const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, 120, 0.08, 4, false), lineMaterial);
+        const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, steps, 0.08, 4, false), lineMaterial);
         rightLine.position.y = 0.02;
         this.scene.add(rightLine);
         this.levelObjects.push(rightLine);
 
         const dashMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
-        for (let i = 0; i < 120; i += 6) {
-            const t = i / 120;
-            const t2 = Math.min((i + 3) / 120, 1);
+        for (let i = 0; i < steps; i += 6) {
+            const t = i / steps;
+            const t2 = Math.min((i + 3) / steps, 1);
             const point1 = this.roadCurve.getPoint(t);
             const point2 = this.roadCurve.getPoint(t2);
             const dashLength = point1.distanceTo(point2);
@@ -424,7 +456,7 @@ export class LevelManager {
 
     // ==================== SHARED ENVIRONMENT ====================
     createCliff() {
-        const cliffLength = 300;
+        const cliffLength = this.roadLength + 40;
         const cliffFace = new THREE.Mesh(
             new THREE.PlaneGeometry(cliffLength, 30),
             new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1.0 })
@@ -435,7 +467,7 @@ export class LevelManager {
         this.levelObjects.push(cliffFace);
 
         const water = new THREE.Mesh(
-            new THREE.PlaneGeometry(100, 300),
+            new THREE.PlaneGeometry(110, cliffLength),
             new THREE.MeshStandardMaterial({ color: 0x1a3d5c, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.9 })
         );
         water.rotation.x = -Math.PI / 2;
@@ -445,7 +477,7 @@ export class LevelManager {
     }
 
     createGrass(color = 0x0a1a0a) {
-        const grassGeo = new THREE.PlaneGeometry(80, 300);
+        const grassGeo = new THREE.PlaneGeometry(90, this.roadLength + 40);
         const grassMat = new THREE.MeshStandardMaterial({ color: color, roughness: 1.0 });
 
         const leftGrass = new THREE.Mesh(grassGeo, grassMat);
@@ -478,7 +510,7 @@ export class LevelManager {
 
         for (let i = 0; i < count; i++) {
             const x = side * (20 + Math.random() * 35);
-            const z = (Math.random() - 0.5) * 280;
+            const z = (Math.random() - 0.5) * (this.roadLength - 40);
             const height = 5 + Math.random() * 10;
             const trunkH = height * 0.4;
             const radius = 2 + Math.random() * 3;
@@ -505,7 +537,7 @@ export class LevelManager {
         count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const x = -(15 + Math.random() * 30);
-            const z = (Math.random() - 0.5) * 260;
+            const z = (Math.random() - 0.5) * (this.roadLength - 60);
             const fernGroup = new THREE.Group();
             const fronds = 3 + Math.floor(Math.random() * 3);
             for (let f = 0; f < fronds; f++) {
@@ -546,7 +578,7 @@ export class LevelManager {
 
             const x = (Math.random() - 0.5) * 20;
             const y = 1.5 + Math.random() * 2;
-            const z = (Math.random() - 0.5) * 260;
+            const z = (Math.random() - 0.5) * (this.roadLength - 60);
             mothGroup.position.set(x, y, z);
 
             this.scene.add(mothGroup);
@@ -584,7 +616,7 @@ export class LevelManager {
             });
 
             const side = Math.random() > 0.5 ? -1 : 1;
-            slugGroup.position.set(side * (7 + Math.random() * 3), 0, (Math.random() - 0.5) * 240);
+            slugGroup.position.set(side * (7 + Math.random() * 3), 0, (Math.random() - 0.5) * (this.roadLength - 90));
             slugGroup.rotation.y = Math.random() * Math.PI * 2;
             this.scene.add(slugGroup);
             this.levelObjects.push(slugGroup);
@@ -724,7 +756,7 @@ export class LevelManager {
 
     createStormReservoir() {
         const water = new THREE.Mesh(
-            new THREE.PlaneGeometry(120, 300, 20, 20),
+            new THREE.PlaneGeometry(120, this.roadLength + 40, 20, 20),
             new THREE.MeshStandardMaterial({ color: 0x0a2a4c, roughness: 0.05, metalness: 0.5, transparent: true, opacity: 0.9 })
         );
         water.rotation.x = -Math.PI / 2;
@@ -742,7 +774,7 @@ export class LevelManager {
                 new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.1, metalness: 0.8, transparent: true, opacity: 0.7 })
             );
             puddle.rotation.x = -Math.PI / 2;
-            puddle.position.set((Math.random() - 0.5) * 12, 0.02, (Math.random() - 0.5) * 280);
+            puddle.position.set((Math.random() - 0.5) * 12, 0.02, (Math.random() - 0.5) * (this.roadLength - 40));
             puddle.scale.set(1 + Math.random(), 0.6 + Math.random() * 0.4, 1);
             this.scene.add(puddle);
             this.levelObjects.push(puddle);

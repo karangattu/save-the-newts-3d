@@ -18,7 +18,7 @@ export class NewtManager {
         this.baseSpawnInterval = 3; // seconds
         this.spawnTimer = 0;
         this.roadWidth = 12;
-        this.roadLength = 280;
+        this.roadLength = 520;
 
         // Rescue settings
         this.rescueDistance = 1.5; // Auto-rescue distance
@@ -42,6 +42,18 @@ export class NewtManager {
 
     setRoadCurve(roadCurve) {
         this.roadCurve = roadCurve;
+
+        if (!roadCurve) return;
+
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i <= 120; i++) {
+            const point = roadCurve.getPoint(i / 120);
+            minZ = Math.min(minZ, point.z);
+            maxZ = Math.max(maxZ, point.z);
+        }
+
+        this.roadLength = Math.max(280, maxZ - minZ);
     }
 
     createNewtMesh() {

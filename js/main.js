@@ -259,6 +259,15 @@ class Game {
         this.elapsedTime = 0;
         this.lastTime = performance.now() / 1000;
 
+        // Always spawn on the current road centerline so map curve changes
+        // cannot place the player into danger zones at game start.
+        const spawnRoadData = this.levelManager.getRoadDataAtZ(0);
+        this.camera.position.set(
+            spawnRoadData.point.x,
+            this.player.playerHeight,
+            spawnRoadData.point.z
+        );
+
         // Update UI
         this.ui.hideGameOver();
         this.ui.updateBattery(100);
@@ -597,19 +606,30 @@ class Game {
         const playerPos = this.player.getPosition();
         const roadData = this.levelManager.getRoadDataAtZ(playerPos.z);
         const dangerZones = this.levelManager.dangerZones;
+        const roadHalfWidth = (this.levelManager.roadWidth || 12) / 2;
+
+        // Never trigger danger logic while the player is still on-road or at the shoulder.
+        const roadSafeBand = roadHalfWidth + 1.5;
 
         if (!this._dangerVec) this._dangerVec = new THREE.Vector3();
         this._dangerVec.subVectors(playerPos, roadData.point);
         const lateralDist = this._dangerVec.dot(roadData.normal);
 
+        if (Math.abs(lateralDist) <= roadSafeBand) {
+            return { inDanger: false };
+        }
+
+        const cliffEdge = Math.max(dangerZones.cliff, roadHalfWidth + 3);
+        const forestEdge = Math.min(dangerZones.forest, -(roadHalfWidth + 3));
+
         // Check cliff (right side relative to road center)
-        if (lateralDist > dangerZones.cliff + 4) {
+        if (lateralDist > cliffEdge + 4) {
             return { inDanger: true, type: 'cliff' };
         }
 
         // Check forest (left side relative to road center)
-        if (lateralDist < dangerZones.forest) {
-            const depth = Math.abs(lateralDist - dangerZones.forest);
+        if (lateralDist < forestEdge) {
+            const depth = Math.abs(lateralDist - forestEdge);
             const attackChance = Math.min(0.02 + (depth * 0.01), 0.15);
 
             if (Math.random() < attackChance) {

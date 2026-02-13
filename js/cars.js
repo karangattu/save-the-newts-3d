@@ -24,7 +24,7 @@ export class CarManager {
         this.baseSpawnInterval = 4; // seconds
         this.spawnTimer = 0;
         this.roadWidth = 12;
-        this.roadLength = 280;
+        this.roadLength = 520;
 
         // Stealth car settings
         this.baseStealthChance = 0.1;
