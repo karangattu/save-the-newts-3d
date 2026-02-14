@@ -250,7 +250,8 @@ export class NewtManager {
         mesh.position.copy(startPosition);
 
         this._spawnDirection.subVectors(targetPosition, startPosition).normalize();
-        mesh.rotation.y = Math.atan2(this._spawnDirection.x, this._spawnDirection.z);
+        // Newt head is along local +X, so rotate to face movement direction
+        mesh.rotation.y = Math.atan2(-this._spawnDirection.z, this._spawnDirection.x);
 
         const newt = {
             mesh: mesh,
@@ -386,7 +387,8 @@ export class NewtManager {
 
             newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.01;
             if (!newt.isPaused) {
-                newt.mesh.rotation.y += Math.sin(newt.walkCycle * 0.7) * 0.003;
+                // Face head toward movement direction (head is along local +X)
+                newt.mesh.rotation.y = Math.atan2(-_moveDir.z, _moveDir.x) + Math.sin(newt.walkCycle * 0.7) * 0.01;
             }
 
             const isIlluminated = shouldCheckIllumination
