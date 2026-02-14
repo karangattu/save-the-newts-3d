@@ -36,6 +36,7 @@ export class LevelManager {
         this.windTime = 0;
 
         this.splashParticles = [];
+        this.splashPool = [];
         this.puddlePositions = [];
 
         // Moths (SF-realistic, not fireflies)
@@ -63,6 +64,38 @@ export class LevelManager {
             this.rainUpdateInterval = 3;
             this.rainActiveFraction = 1;
         }
+    }
+
+    prewarmSplashPool() {
+        const maxSplashes = this.isMobile ? 30 : 60;
+        const splashGeo = new THREE.RingGeometry(0.02, 0.08, 6);
+        const splashMat = new THREE.MeshBasicMaterial({ color: 0x6688aa, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+        for (let i = this.splashPool.length; i < maxSplashes; i++) {
+            const splash = new THREE.Mesh(splashGeo, splashMat.clone());
+            splash.rotation.x = -Math.PI / 2;
+            splash.visible = false;
+            splash.userData.life = 0;
+            splash.userData.maxLife = 0.4;
+            this.splashPool.push(splash);
+        }
+    }
+
+    acquireSplash() {
+        if (this.splashPool.length > 0) {
+            const splash = this.splashPool.pop();
+            splash.visible = true;
+            splash.scale.set(0.1, 0.1, 0.1);
+            splash.material.opacity = 0.8;
+            splash.userData.life = 0;
+            return splash;
+        }
+        return null;
+    }
+
+    releaseSplash(splash) {
+        splash.visible = false;
+        this.scene.remove(splash);
+        this.splashPool.push(splash);
     }
 
     getDensityScale() {
@@ -196,8 +229,8 @@ export class LevelManager {
     createStopSign(x, z, facingAngle = 0) {
         const group = new THREE.Group();
         const pole = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.04, 0.04, 2.2, 8),
-            new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.3 })
+            new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6),
+            new THREE.MeshLambertMaterial({ color: 0x888888 })
         );
         pole.position.y = 1.1;
         group.add(pole);
@@ -214,7 +247,7 @@ export class LevelManager {
         }
         shape.closePath();
         const signGeo = new THREE.ShapeGeometry(shape);
-        const signMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, emissive: 0x330000, emissiveIntensity: 0.3, roughness: 0.5, side: THREE.DoubleSide });
+        const signMat = new THREE.MeshLambertMaterial({ color: 0xcc0000, emissive: 0x330000, emissiveIntensity: 0.3, side: THREE.DoubleSide });
         const sign = new THREE.Mesh(signGeo, signMat);
         sign.position.y = 2.0;
         group.add(sign);
@@ -231,13 +264,13 @@ export class LevelManager {
         innerShape.closePath();
         const border = new THREE.Mesh(
             new THREE.ShapeGeometry(innerShape),
-            new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222, emissiveIntensity: 0.2, side: THREE.DoubleSide })
+            new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x222222, emissiveIntensity: 0.2, side: THREE.DoubleSide })
         );
         border.position.set(0, 2.0, 0.01);
         group.add(border);
 
         // Simplified STOP text bars
-        const tb = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x444444, emissiveIntensity: 0.3 });
+        const tb = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x444444, emissiveIntensity: 0.3 });
         [[-0.12, 2.03], [-0.12, 1.97], [-0.02, 2.04]].forEach(([x2, y2]) => {
             const bar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.01), tb);
             bar.position.set(x2, y2, 0.02);
@@ -249,8 +282,8 @@ export class LevelManager {
 
         // Reflective strip on pole
         const strip = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.045, 0.045, 0.05, 8),
-            new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 })
+            new THREE.CylinderGeometry(0.045, 0.045, 0.05, 6),
+            new THREE.MeshLambertMaterial({ color: 0xcccccc })
         );
         strip.position.y = 0.3;
         group.add(strip);
@@ -264,22 +297,22 @@ export class LevelManager {
     createNewtCrossingSign(x, z, facingAngle = 0) {
         const group = new THREE.Group();
         const pole = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.04, 0.04, 2.2, 8),
-            new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.3 })
+            new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6),
+            new THREE.MeshLambertMaterial({ color: 0x888888 })
         );
         pole.position.y = 1.1;
         group.add(pole);
 
         // Diamond warning sign
         const signGeo = new THREE.PlaneGeometry(0.6, 0.6);
-        const signMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0x554400, emissiveIntensity: 0.4, roughness: 0.4, side: THREE.DoubleSide });
+        const signMat = new THREE.MeshLambertMaterial({ color: 0xffcc00, emissive: 0x554400, emissiveIntensity: 0.4, side: THREE.DoubleSide });
         const sign = new THREE.Mesh(signGeo, signMat);
         sign.position.y = 2.0;
         sign.rotation.z = Math.PI / 4;
         group.add(sign);
 
         // Newt silhouette on sign
-        const newtMat = new THREE.MeshStandardMaterial({ color: 0x111111, side: THREE.DoubleSide });
+        const newtMat = new THREE.MeshLambertMaterial({ color: 0x111111, side: THREE.DoubleSide });
         const newtBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.12, 4, 6), newtMat);
         newtBody.rotation.z = Math.PI / 2;
         newtBody.position.set(0, 2.0, 0.02);
@@ -300,14 +333,14 @@ export class LevelManager {
         // Sub-sign plate
         const subSign = new THREE.Mesh(
             new THREE.PlaneGeometry(0.5, 0.15),
-            new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3, roughness: 0.4, side: THREE.DoubleSide })
+            new THREE.MeshLambertMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3, side: THREE.DoubleSide })
         );
         subSign.position.y = 1.55;
         group.add(subSign);
 
         const strip = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.045, 0.045, 0.05, 8),
-            new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 })
+            new THREE.CylinderGeometry(0.045, 0.045, 0.05, 6),
+            new THREE.MeshLambertMaterial({ color: 0xcccccc })
         );
         strip.position.y = 0.3;
         group.add(strip);
@@ -320,15 +353,15 @@ export class LevelManager {
 
     createWarningSign(x, z) {
         const pole = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8),
-            new THREE.MeshStandardMaterial({ color: 0x444444 })
+            new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6),
+            new THREE.MeshLambertMaterial({ color: 0x444444 })
         );
         pole.position.set(x, 0.6, z);
         this.scene.add(pole);
         this.levelObjects.push(pole);
         const sign = new THREE.Mesh(
             new THREE.PlaneGeometry(0.6, 0.4),
-            new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3 })
+            new THREE.MeshLambertMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3 })
         );
         sign.position.set(x - 0.01, 1.1, z);
         sign.rotation.y = Math.PI / 2;
@@ -382,12 +415,10 @@ export class LevelManager {
         const roadWidth = this.roadWidth;
         this.createAlmaBridgeRoadCurve();
 
-        const roadSegments = Math.max(250, Math.floor(this.roadLength * 0.8));
+        const roadSegments = Math.max(150, Math.floor(this.roadLength * 0.5));
         const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, roadSegments);
-        const roadMaterial = new THREE.MeshStandardMaterial({
+        const roadMaterial = new THREE.MeshLambertMaterial({
             color: wetness > 0 ? 0x1a1a1a : 0x2a2a2a,
-            roughness: wetness > 0 ? 0.2 : 0.4,
-            metalness: wetness > 0 ? 0.4 : 0.2,
             side: THREE.DoubleSide
         });
 
@@ -413,7 +444,7 @@ export class LevelManager {
 
     createRoadMarkings(roadWidth) {
         const edgeLinePoints = [];
-        const steps = Math.max(120, Math.floor(this.roadLength / 2));
+        const steps = Math.max(80, Math.floor(this.roadLength / 3));
 
         for (let i = 0; i <= steps; i++) {
             const t = i / steps;
@@ -426,32 +457,90 @@ export class LevelManager {
 
         const leftEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 0));
         const rightEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 1));
-        const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+        const lineMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-        const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, steps, 0.08, 4, false), lineMaterial);
+        const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, steps, 0.08, 3, false), lineMaterial);
         leftLine.position.y = 0.02;
         this.scene.add(leftLine);
         this.levelObjects.push(leftLine);
 
-        const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, steps, 0.08, 4, false), lineMaterial);
+        const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, steps, 0.08, 3, false), lineMaterial);
         rightLine.position.y = 0.02;
         this.scene.add(rightLine);
         this.levelObjects.push(rightLine);
 
-        const dashMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
+        // Merge all dashes into a single geometry to reduce draw calls
+        const dashMaterial = new THREE.MeshLambertMaterial({ color: 0xffcc00 });
+        const dashGeometries = [];
+        const _matrix = new THREE.Matrix4();
+        const _pos = new THREE.Vector3();
+        const _quat = new THREE.Quaternion();
+        const _scale = new THREE.Vector3(1, 1, 1);
+        const baseDash = new THREE.BoxGeometry(0.15, 0.02, 1);
+
         for (let i = 0; i < steps; i += 6) {
             const t = i / steps;
             const t2 = Math.min((i + 3) / steps, 1);
             const point1 = this.roadCurve.getPoint(t);
             const point2 = this.roadCurve.getPoint(t2);
             const dashLength = point1.distanceTo(point2);
-            const dash = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.02, dashLength), dashMaterial);
-            dash.position.copy(point1.clone().add(point2).multiplyScalar(0.5));
-            dash.position.y = 0.02;
-            dash.lookAt(point2);
-            this.scene.add(dash);
-            this.levelObjects.push(dash);
+
+            const dashClone = baseDash.clone();
+            dashClone.scale(1, 1, dashLength);
+            _pos.copy(point1).add(point2).multiplyScalar(0.5);
+            _pos.y = 0.02;
+
+            const dir = point2.clone().sub(point1).normalize();
+            const angle = Math.atan2(dir.x, dir.z);
+            _quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+
+            _matrix.compose(_pos, _quat, _scale);
+            dashClone.applyMatrix4(_matrix);
+            dashGeometries.push(dashClone);
         }
+
+        if (dashGeometries.length > 0) {
+            const mergedDashGeo = this.mergeBufferGeometries(dashGeometries);
+            if (mergedDashGeo) {
+                const mergedDashes = new THREE.Mesh(mergedDashGeo, dashMaterial);
+                this.scene.add(mergedDashes);
+                this.levelObjects.push(mergedDashes);
+            }
+        }
+        baseDash.dispose();
+    }
+
+    mergeBufferGeometries(geometries) {
+        let totalVerts = 0;
+        let totalIndices = 0;
+        for (const g of geometries) {
+            totalVerts += g.attributes.position.count;
+            totalIndices += g.index ? g.index.count : g.attributes.position.count;
+        }
+        const positions = new Float32Array(totalVerts * 3);
+        const normals = new Float32Array(totalVerts * 3);
+        const indices = new Uint32Array(totalIndices);
+        let vertOffset = 0;
+        let indexOffset = 0;
+        for (const g of geometries) {
+            const pos = g.attributes.position.array;
+            const norm = g.attributes.normal ? g.attributes.normal.array : null;
+            positions.set(pos, vertOffset * 3);
+            if (norm) normals.set(norm, vertOffset * 3);
+            if (g.index) {
+                for (let i = 0; i < g.index.count; i++) {
+                    indices[indexOffset + i] = g.index.array[i] + vertOffset;
+                }
+                indexOffset += g.index.count;
+            }
+            vertOffset += g.attributes.position.count;
+            g.dispose();
+        }
+        const merged = new THREE.BufferGeometry();
+        merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        merged.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        merged.setIndex(new THREE.BufferAttribute(indices, 1));
+        return merged;
     }
 
     // ==================== SHARED ENVIRONMENT ====================
@@ -459,7 +548,7 @@ export class LevelManager {
         const cliffLength = this.roadLength + 40;
         const cliffFace = new THREE.Mesh(
             new THREE.PlaneGeometry(cliffLength, 30),
-            new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1.0 })
+            new THREE.MeshLambertMaterial({ color: 0x4a4a4a })
         );
         cliffFace.rotation.y = -Math.PI / 2;
         cliffFace.position.set(28, -15, 0);
@@ -468,7 +557,7 @@ export class LevelManager {
 
         const water = new THREE.Mesh(
             new THREE.PlaneGeometry(110, cliffLength),
-            new THREE.MeshStandardMaterial({ color: 0x1a3d5c, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.9 })
+            new THREE.MeshLambertMaterial({ color: 0x1a3d5c, transparent: true, opacity: 0.9 })
         );
         water.rotation.x = -Math.PI / 2;
         water.position.set(80, -28, 0);
@@ -478,7 +567,7 @@ export class LevelManager {
 
     createGrass(color = 0x0a1a0a) {
         const grassGeo = new THREE.PlaneGeometry(90, this.roadLength + 40);
-        const grassMat = new THREE.MeshStandardMaterial({ color: color, roughness: 1.0 });
+        const grassMat = new THREE.MeshLambertMaterial({ color: color });
 
         const leftGrass = new THREE.Mesh(grassGeo, grassMat);
         leftGrass.rotation.x = -Math.PI / 2;
@@ -496,11 +585,11 @@ export class LevelManager {
     createTrees(count, side) {
         if (this.isMobile) count = Math.floor(count * 0.5);
         count = this.getScaledCount(count);
-        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6);
-        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 });
+        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 5);
+        const trunkMat = new THREE.MeshLambertMaterial({ color: 0x1a1510 });
         const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
-        const foliageGeo = new THREE.ConeGeometry(1, 1, 8);
-        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a, roughness: 1 });
+        const foliageGeo = new THREE.ConeGeometry(1, 1, 6);
+        const foliageMat = new THREE.MeshLambertMaterial({ color: 0x0a1a0a });
         const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
 
         const matrix = new THREE.Matrix4();
@@ -557,8 +646,8 @@ export class LevelManager {
             const fronds = 3 + Math.floor(Math.random() * 3);
             for (let f = 0; f < fronds; f++) {
                 const frond = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.3, 1.2, 4),
-                    new THREE.MeshStandardMaterial({ color: 0x1a3a1a, roughness: 0.9 })
+                    new THREE.ConeGeometry(0.3, 1.2, 3),
+                    new THREE.MeshLambertMaterial({ color: 0x1a3a1a })
                 );
                 frond.rotation.x = -0.3 - Math.random() * 0.4;
                 frond.rotation.y = (f / fronds) * Math.PI * 2;
@@ -577,11 +666,11 @@ export class LevelManager {
         count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const mothGroup = new THREE.Group();
-            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x8a7a6a });
             const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.04, 4, 6), bodyMat);
             mothGroup.add(body);
 
-            const wingMat = new THREE.MeshStandardMaterial({ color: 0x9a8a7a, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+            const wingMat = new THREE.MeshLambertMaterial({ color: 0x9a8a7a, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
             const leftWing = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.04), wingMat);
             leftWing.position.set(0.03, 0, 0);
             leftWing.rotation.y = 0.3;
@@ -615,13 +704,13 @@ export class LevelManager {
             const slugGroup = new THREE.Group();
             const body = new THREE.Mesh(
                 new THREE.CapsuleGeometry(0.03, 0.15, 4, 8),
-                new THREE.MeshStandardMaterial({ color: 0xcccc00, roughness: 0.3, metalness: 0.1 })
+                new THREE.MeshLambertMaterial({ color: 0xcccc00 })
             );
             body.rotation.z = Math.PI / 2;
             body.position.y = 0.03;
             slugGroup.add(body);
 
-            const antMat = new THREE.MeshStandardMaterial({ color: 0xaaaa00 });
+            const antMat = new THREE.MeshLambertMaterial({ color: 0xaaaa00 });
             const antGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.04, 4);
             [0.01, -0.01].forEach(zOff => {
                 const ant = new THREE.Mesh(antGeo, antMat);
@@ -772,7 +861,7 @@ export class LevelManager {
     createStormReservoir() {
         const water = new THREE.Mesh(
             new THREE.PlaneGeometry(120, this.roadLength + 40, 20, 20),
-            new THREE.MeshStandardMaterial({ color: 0x0a2a4c, roughness: 0.05, metalness: 0.5, transparent: true, opacity: 0.9 })
+            new THREE.MeshLambertMaterial({ color: 0x0a2a4c, transparent: true, opacity: 0.9 })
         );
         water.rotation.x = -Math.PI / 2;
         water.position.set(80, -28, 0);
@@ -782,11 +871,11 @@ export class LevelManager {
     }
 
     createPuddles() {
-        const puddleCount = this.getScaledCount(this.isMobile ? 16 : 32);
+        const puddleCount = this.getScaledCount(this.isMobile ? 12 : 24);
         for (let i = 0; i < puddleCount; i++) {
             const puddle = new THREE.Mesh(
-                new THREE.CircleGeometry(0.5 + Math.random() * 1, 16),
-                new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.1, metalness: 0.8, transparent: true, opacity: 0.7 })
+                new THREE.CircleGeometry(0.5 + Math.random() * 1, 10),
+                new THREE.MeshLambertMaterial({ color: 0x1a1a2e, transparent: true, opacity: 0.7 })
             );
             puddle.rotation.x = -Math.PI / 2;
             puddle.position.set((Math.random() - 0.5) * 12, 0.02, (Math.random() - 0.5) * (this.roadLength - 40));
@@ -797,7 +886,7 @@ export class LevelManager {
     }
 
     createRain() {
-        const rainCount = this.getScaledCount(this.isMobile ? 3000 : 8000);
+        const rainCount = this.getScaledCount(this.isMobile ? 2000 : 5000);
         this.rainGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array(rainCount * 3);
         this.rainVelocities = new Float32Array(rainCount);
@@ -894,21 +983,18 @@ export class LevelManager {
             this.splashParticles.push(old);
             return;
         }
-        const splash = new THREE.Mesh(
-            new THREE.RingGeometry(0.02, 0.08, 8),
-            new THREE.MeshBasicMaterial({ color: 0x6688aa, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
-        );
-        splash.rotation.x = -Math.PI / 2;
+        const splash = this.acquireSplash();
+        if (!splash) return;
         splash.position.set(x, 0.05, z);
-        splash.userData.life = 0;
-        splash.userData.maxLife = 0.4;
-        this.scene.add(splash);
+        if (!splash.parent) this.scene.add(splash);
         this.splashParticles.push(splash);
     }
 
     updateSplashes(deltaTime, cameraPosition) {
         if (this.currentLevel !== 3) {
-            this.splashParticles.forEach(s => this.scene.remove(s));
+            for (let i = this.splashParticles.length - 1; i >= 0; i--) {
+                this.releaseSplash(this.splashParticles[i]);
+            }
             this.splashParticles = [];
             return;
         }
@@ -925,7 +1011,7 @@ export class LevelManager {
             splash.scale.set(scale, scale, scale);
             splash.material.opacity = 0.8 * (1 - progress);
             if (splash.userData.life >= splash.userData.maxLife) {
-                this.scene.remove(splash);
+                this.releaseSplash(splash);
                 this.splashParticles.splice(i, 1);
             }
         }

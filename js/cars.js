@@ -806,7 +806,7 @@ export class CarManager {
         group.add(fenderR);
 
         // Wheels (detailed with spokes implied by higher segments)
-        const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.12, 20);
+        const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.12, 12);
         const wheelMat = this.sharedMaterials.wheel;
 
         const frontWheel = new THREE.Mesh(wheelGeo, wheelMat);
@@ -919,8 +919,8 @@ export class CarManager {
     }
 
     addWheels(group, xOffset, zOffset, radius = 0.35, zPos = 0) {
-        const wheelGeo = new THREE.CylinderGeometry(radius, radius, 0.28, 20);
-        const hubGeo = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, 0.3, 12);
+        const wheelGeo = new THREE.CylinderGeometry(radius, radius, 0.28, 10);
+        const hubGeo = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, 0.3, 8);
 
         const positions = [
             { x: xOffset, z: zPos + zOffset },
@@ -947,7 +947,7 @@ export class CarManager {
     addHeadlights(group, zPos, yPos = 0.7) {
         if (!this.enableDynamicLights) return;
 
-        const headlightGeo = new THREE.SphereGeometry(0.13, 10, 10);
+        const headlightGeo = new THREE.SphereGeometry(0.13, 8, 8);
 
         const leftHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
         leftHeadlight.position.set(0.6, yPos, zPos);
@@ -957,18 +957,15 @@ export class CarManager {
         rightHeadlight.position.set(-0.6, yPos, zPos);
         group.add(rightHeadlight);
 
-        // Light beams
-        const leftLight = new THREE.SpotLight(0xffffee, 2, 30, 0.4, 0.5);
-        leftLight.position.set(0.6, yPos, zPos);
-        leftLight.target.position.set(0.6, 0, zPos + 20);
-        group.add(leftLight);
-        group.add(leftLight.target);
-
-        const rightLight = new THREE.SpotLight(0xffffee, 2, 30, 0.4, 0.5);
-        rightLight.position.set(-0.6, yPos, zPos);
-        rightLight.target.position.set(-0.6, 0, zPos + 20);
-        group.add(rightLight);
-        group.add(rightLight.target);
+        // Only add a single SpotLight on high quality (not one per headlight)
+        if (this.qualityLevel >= 2) {
+            const light = new THREE.SpotLight(0xffffee, 2.5, 25, 0.5, 0.6);
+            light.position.set(0, yPos, zPos);
+            light.target.position.set(0, 0, zPos + 20);
+            light.castShadow = false;
+            group.add(light);
+            group.add(light.target);
+        }
     }
 
     addTaillights(group, isStealth, zPos) {

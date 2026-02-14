@@ -172,15 +172,17 @@ export class Flashlight {
             this.spotlight.color.copy(_normalColor);
         }
 
-        this.fillLight.intensity = this.isOn && this.battery > 0 ? (this.battery / 100) * 0.8 : 0;
+        this.fillLight.intensity = this.isOn && this.battery > 0 && this.fillLight.visible ? (this.battery / 100) * 0.8 : 0;
         this.fillLight.color.copy(this.spotlight.color);
 
-        const glowBase = this.isMobile ? 3 : 2;
-        const glowScale = this.qualityLevel <= 1 ? 0.45 : (this.qualityLevel === 2 ? 0.75 : 1);
-        this.outerGlow.intensity = this.isOn && this.battery > 0
-            ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity) * glowScale
-            : 0;
-        this.outerGlow.color.copy(this.spotlight.color);
+        if (this.outerGlow.visible) {
+            const glowBase = this.isMobile ? 3 : 2;
+            const glowScale = this.qualityLevel <= 1 ? 0.45 : (this.qualityLevel === 2 ? 0.75 : 1);
+            this.outerGlow.intensity = this.isOn && this.battery > 0
+                ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity) * glowScale
+                : 0;
+            this.outerGlow.color.copy(this.spotlight.color);
+        }
 
         if (this.volumetricCone) {
             const baseOpacity = this.isOn && this.battery > 0
@@ -205,6 +207,17 @@ export class Flashlight {
         this.outerGlow.distance = this.qualityLevel <= 1
             ? (this.isMobile ? 24 : 20)
             : (this.isMobile ? 35 : 30);
+
+        // Disable fill and outer glow on lowest quality for major perf win
+        if (this.qualityLevel <= 1) {
+            this.fillLight.intensity = 0;
+            this.outerGlow.intensity = 0;
+            this.fillLight.visible = false;
+            this.outerGlow.visible = false;
+        } else {
+            this.fillLight.visible = true;
+            this.outerGlow.visible = true;
+        }
 
         if (this.volumetricCone) {
             this.volumetricCone.visible = this.qualityLevel > 1;

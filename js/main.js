@@ -68,7 +68,7 @@ class Game {
 
         this.qualityLevel = this.isLowEnd ? 1 : 3;
         this.maxQualityLevel = this.isMobile ? 2 : 3;
-        this.minPixelRatio = this.isMobile ? 0.6 : 0.75;
+        this.minPixelRatio = this.isMobile ? 0.5 : 0.65;
 
         // Create scene renderer and camera first
         this.scene = new THREE.Scene();
@@ -76,16 +76,18 @@ class Game {
             75,
             window.innerWidth / window.innerHeight,
             0.1,
-            1000
+            200
         );
         this.camera.position.set(0, 1.7, 0);
 
         this.renderer = new THREE.WebGLRenderer({
-            antialias: !this.isLowEnd,
+            antialias: !this.isMobile && !this.isLowEnd,
             powerPreference: 'high-performance',
-            stencil: false
+            stencil: false,
+            depth: true,
+            alpha: false
         });
-        this.renderer.physicallyCorrectLights = true; // more realistic light falloff
+        this.renderer.physicallyCorrectLights = true;
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.currentPixelRatio = Math.min(
             window.devicePixelRatio,
@@ -94,7 +96,7 @@ class Game {
         this.renderer.setPixelRatio(this.currentPixelRatio);
         this.renderer.shadowMap.enabled = !this.isLowEnd && this.qualityLevel >= 2;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMapping = this.isLowEnd ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = this.isLowEnd ? 1.05 : 1.2;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
@@ -106,6 +108,7 @@ class Game {
         const levelData = this.levelManager.loadLevel(1);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
+        this.freezeStaticObjects();
 
         // Create player with mobile flag
         this.player = new Player(
@@ -332,6 +335,7 @@ class Game {
         const levelData = this.levelManager.loadLevel(1);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
+        this.freezeStaticObjects();
 
         // Update player bounds
         this.player.roadBounds = this.roadBounds;
@@ -399,6 +403,7 @@ class Game {
         const levelData = this.levelManager.loadLevel(this.currentLevel);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
+        this.freezeStaticObjects();
 
         // Update player
         this.player.reset();
@@ -866,10 +871,24 @@ class Game {
         return this.isMobile || this.isConsole || cores <= 4 || memory <= 4;
     }
 
+    freezeStaticObjects() {
+        // Disable matrixAutoUpdate on all static scene objects to skip per-frame matrix recalcs
+        this.levelManager.levelObjects.forEach(obj => {
+            obj.matrixAutoUpdate = false;
+            obj.updateMatrix();
+            if (obj.children) {
+                obj.traverse(child => {
+                    child.matrixAutoUpdate = false;
+                    child.updateMatrix();
+                });
+            }
+        });
+    }
+
     getQualityPixelRatioCap(level) {
         const clampedLevel = Math.max(0, Math.min(3, level | 0));
-        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.2 : 1.6);
-        const qualityScale = [0.65, 0.82, 1, 1.12];
+        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.0 : 1.4);
+        const qualityScale = [0.5, 0.7, 0.9, 1.0];
         return Math.max(this.minPixelRatio, baseCap * qualityScale[clampedLevel]);
     }
 
@@ -952,6 +971,7 @@ class Game {
                 run: async () => {
                     this.newtManager.prewarmPool(this.isLowEnd ? 8 : 14);
                     this.predatorManager.prewarmPool();
+                    this.levelManager.prewarmSplashPool();
                     await this.sleep(16);
                 }
             },
@@ -971,6 +991,7 @@ class Game {
                         this.player.roadBounds = this.roadBounds;
                         this.newtManager.setRoadCurve(this.roadCurve);
                         this.carManager.setRoadCurve(this.roadCurve);
+                        this.freezeStaticObjects();
 
                         this.renderer.compile(this.scene, this.camera);
                         this.renderer.render(this.scene, this.camera);
@@ -987,6 +1008,7 @@ class Game {
                     this.player.roadBounds = this.roadBounds;
                     this.newtManager.setRoadCurve(this.roadCurve);
                     this.carManager.setRoadCurve(this.roadCurve);
+                    this.freezeStaticObjects();
 
                     this.player.reset();
                     this.newtManager.reset();
