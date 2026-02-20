@@ -49,6 +49,20 @@ export class LevelManager {
 
         this.qualityLevel = isMobile ? 1 : 3;
         this.rainActiveFraction = this.qualityLevel <= 1 ? 0.45 : 1;
+
+        // Road data lookup table for O(1) per-frame queries instead of 101-point linear scan
+        this._roadLUT = null;
+        // Reusable statics for getRoadDataAtZ to avoid per-call allocations
+        this._rdPoint = new THREE.Vector3();
+        this._rdTangent = new THREE.Vector3();
+        this._rdNormal = new THREE.Vector3();
+        this._rdFallback = {
+            point: new THREE.Vector3(),
+            tangent: new THREE.Vector3(0, 0, 1),
+            normal: new THREE.Vector3(1, 0, 0),
+            t: 0
+        };
+        this._rdResult = { point: null, tangent: null, normal: null, t: 0 };
     }
 
     setQualityLevel(level) {
@@ -119,6 +133,9 @@ export class LevelManager {
         } else if (levelNum === 3) {
             this.createLevel3();
         }
+
+        // Build road data lookup table for fast per-frame queries
+        this._buildRoadLUT();
 
         return {
             roadCurve: this.roadCurve,
@@ -351,22 +368,26 @@ export class LevelManager {
         this.levelObjects.push(group);
     }
 
-    createWarningSign(x, z) {
+    createWarningSign(x, z, facingAngle = 0) {
+        const group = new THREE.Group();
         const pole = new THREE.Mesh(
             new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6),
             new THREE.MeshLambertMaterial({ color: 0x444444 })
         );
-        pole.position.set(x, 0.6, z);
-        this.scene.add(pole);
-        this.levelObjects.push(pole);
+        pole.position.y = 0.6;
+        group.add(pole);
+
         const sign = new THREE.Mesh(
             new THREE.PlaneGeometry(0.6, 0.4),
-            new THREE.MeshLambertMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3 })
+            new THREE.MeshLambertMaterial({ color: 0xffcc00, emissive: 0x332200, emissiveIntensity: 0.3, side: THREE.DoubleSide })
         );
-        sign.position.set(x - 0.01, 1.1, z);
-        sign.rotation.y = Math.PI / 2;
-        this.scene.add(sign);
-        this.levelObjects.push(sign);
+        sign.position.set(0, 1.1, 0.02);
+        group.add(sign);
+
+        group.position.set(x, 0, z);
+        group.rotation.y = facingAngle;
+        this.scene.add(group);
+        this.levelObjects.push(group);
     }
 
     placeRoadSigns() {
@@ -403,10 +424,17 @@ export class LevelManager {
         this.createStopSign(sp2.x, sp2.z, ea + Math.PI);
 
         // Cliff warning signs
-        const warningStart = -this.roadLength / 2 + 40;
-        const warningEnd = this.roadLength / 2 - 40;
-        for (let z = warningStart; z <= warningEnd; z += 55) {
-            this.createWarningSign(20, z);
+        const warningCount = Math.max(6, Math.floor(this.roadLength / 55));
+        for (let i = 0; i < warningCount; i++) {
+            const t = 0.1 + (i * (0.8 / Math.max(1, warningCount - 1)));
+            if (t > 0.9) break;
+            const point = this.roadCurve.getPoint(t);
+            const tangent = this.roadCurve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            const facingAngle = Math.atan2(tangent.x, tangent.z);
+            // Place on the right side (cliff side)
+            const signPos = point.clone().add(normal.clone().multiplyScalar(-(roadWidth / 2 + 2.0)));
+            this.createWarningSign(signPos.x, signPos.z, facingAngle + Math.PI);
         }
     }
 
@@ -551,7 +579,7 @@ export class LevelManager {
             new THREE.MeshLambertMaterial({ color: 0x4a4a4a })
         );
         cliffFace.rotation.y = -Math.PI / 2;
-        cliffFace.position.set(28, -15, 0);
+        cliffFace.position.set(40, -15, 0);
         this.scene.add(cliffFace);
         this.levelObjects.push(cliffFace);
 
@@ -560,24 +588,25 @@ export class LevelManager {
             new THREE.MeshLambertMaterial({ color: 0x1a3d5c, transparent: true, opacity: 0.9 })
         );
         water.rotation.x = -Math.PI / 2;
-        water.position.set(80, -28, 0);
+        water.position.set(95, -28, 0);
         this.scene.add(water);
         this.levelObjects.push(water);
     }
 
     createGrass(color = 0x0a1a0a) {
-        const grassGeo = new THREE.PlaneGeometry(90, this.roadLength + 40);
         const grassMat = new THREE.MeshLambertMaterial({ color: color });
 
-        const leftGrass = new THREE.Mesh(grassGeo, grassMat);
+        const leftGrassGeo = new THREE.PlaneGeometry(90, this.roadLength + 40);
+        const leftGrass = new THREE.Mesh(leftGrassGeo, grassMat);
         leftGrass.rotation.x = -Math.PI / 2;
         leftGrass.position.set(-45, -0.01, 0);
         this.scene.add(leftGrass);
         this.levelObjects.push(leftGrass);
 
-        const rightGrass = new THREE.Mesh(grassGeo, grassMat);
+        const rightGrassGeo = new THREE.PlaneGeometry(40, this.roadLength + 40);
+        const rightGrass = new THREE.Mesh(rightGrassGeo, grassMat);
         rightGrass.rotation.x = -Math.PI / 2;
-        rightGrass.position.set(45, -0.01, 0);
+        rightGrass.position.set(20, -0.01, 0);
         this.scene.add(rightGrass);
         this.levelObjects.push(rightGrass);
     }
@@ -680,10 +709,13 @@ export class LevelManager {
             rightWing.rotation.y = -0.3;
             mothGroup.add(rightWing);
 
-            const x = (Math.random() - 0.5) * 20;
+            const roadZ = (Math.random() - 0.5) * (this.roadLength - 60);
+            const roadData = this.getRoadDataAtZ(roadZ);
+            const lateral = (Math.random() - 0.5) * 20;
+            const basePos = roadData.point.clone().add(roadData.normal.clone().multiplyScalar(lateral));
+            
             const y = 1.5 + Math.random() * 2;
-            const z = (Math.random() - 0.5) * (this.roadLength - 60);
-            mothGroup.position.set(x, y, z);
+            mothGroup.position.set(basePos.x, y, basePos.z);
 
             this.scene.add(mothGroup);
             this.levelObjects.push(mothGroup);
@@ -700,6 +732,7 @@ export class LevelManager {
     createBananaSlugs(count = 8) {
         if (this.isMobile) count = Math.floor(count * 0.5);
         count = this.getScaledCount(count);
+        const roadHalfWidth = this.roadWidth / 2;
         for (let i = 0; i < count; i++) {
             const slugGroup = new THREE.Group();
             const body = new THREE.Mesh(
@@ -719,8 +752,13 @@ export class LevelManager {
                 slugGroup.add(ant);
             });
 
+            const roadZ = (Math.random() - 0.5) * (this.roadLength - 90);
+            const roadData = this.getRoadDataAtZ(roadZ);
             const side = Math.random() > 0.5 ? -1 : 1;
-            slugGroup.position.set(side * (7 + Math.random() * 3), 0, (Math.random() - 0.5) * (this.roadLength - 90));
+            const lateral = roadHalfWidth + 1 + Math.random() * 3;
+            const basePos = roadData.point.clone().add(roadData.normal.clone().multiplyScalar(side * lateral));
+
+            slugGroup.position.copy(basePos);
             slugGroup.rotation.y = Math.random() * Math.PI * 2;
             this.scene.add(slugGroup);
             this.levelObjects.push(slugGroup);
@@ -1035,22 +1073,75 @@ export class LevelManager {
         });
     }
 
+    _buildRoadLUT() {
+        if (!this.roadCurve) { this._roadLUT = null; return; }
+
+        const samples = 200;
+        const lut = new Array(samples + 1);
+
+        for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            const p = this.roadCurve.getPoint(t);
+            const tan = this.roadCurve.getTangent(t);
+            const nx = -tan.z, nz = tan.x;
+            const nl = Math.sqrt(nx * nx + nz * nz) || 1;
+            lut[i] = {
+                t,
+                z: p.z,
+                px: p.x, py: p.y, pz: p.z,
+                tx: tan.x, ty: tan.y, tz: tan.z,
+                nx: nx / nl, ny: 0, nz: nz / nl
+            };
+        }
+
+        // Sort by Z for binary search
+        lut.sort((a, b) => a.z - b.z);
+        this._roadLUT = lut;
+    }
+
     getRoadDataAtZ(z) {
-        if (!this.roadCurve) {
-            return { point: new THREE.Vector3(0, 0, z), tangent: new THREE.Vector3(0, 0, 1), normal: new THREE.Vector3(1, 0, 0) };
+        if (!this.roadCurve || !this._roadLUT) {
+            if (!this._rdFallback) {
+                this._rdFallback = {
+                    point: new THREE.Vector3(),
+                    tangent: new THREE.Vector3(0, 0, 1),
+                    normal: new THREE.Vector3(1, 0, 0),
+                    t: 0
+                };
+            }
+            const fb = this._rdFallback;
+            fb.point.set(0, 0, z);
+            fb.tangent.set(0, 0, 1);
+            fb.normal.set(1, 0, 0);
+            fb.t = 0;
+            return fb;
         }
-        let closestT = 0;
-        let minZDiff = Infinity;
-        for (let i = 0; i <= 100; i++) {
-            const t = i / 100;
-            const point = this.roadCurve.getPoint(t);
-            const zDiff = Math.abs(point.z - z);
-            if (zDiff < minZDiff) { minZDiff = zDiff; closestT = t; }
+
+        // Binary search for closest Z in the LUT
+        const lut = this._roadLUT;
+        let lo = 0, hi = lut.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (lut[mid].z < z) lo = mid + 1;
+            else hi = mid;
         }
-        const point = this.roadCurve.getPoint(closestT);
-        const tangent = this.roadCurve.getTangent(closestT);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-        return { point, tangent, normal, t: closestT };
+        // Check neighbor for closest
+        let best = lo;
+        if (lo > 0 && Math.abs(lut[lo - 1].z - z) < Math.abs(lut[lo].z - z)) {
+            best = lo - 1;
+        }
+
+        const entry = lut[best];
+        this._rdPoint.set(entry.px, entry.py, entry.pz);
+        this._rdTangent.set(entry.tx, entry.ty, entry.tz);
+        this._rdNormal.set(entry.nx, entry.ny, entry.nz);
+
+        const result = this._rdResult;
+        result.point = this._rdPoint;
+        result.tangent = this._rdTangent;
+        result.normal = this._rdNormal;
+        result.t = entry.t;
+        return result;
     }
 
     getCurrentLevel() { return this.currentLevel; }

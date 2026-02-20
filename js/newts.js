@@ -38,6 +38,18 @@ export class NewtManager {
         this.illuminationCheckCounter = 0;
 
         this._spawnDirection = new THREE.Vector3();
+
+        // Reusable statics for getRoadDataAtZ to avoid per-call allocations
+        this._rdPoint = new THREE.Vector3();
+        this._rdTangent = new THREE.Vector3();
+        this._rdNormal = new THREE.Vector3();
+        this._rdResult = { point: null, tangent: null, normal: null, t: 0 };
+        this._rdFallback = {
+            point: new THREE.Vector3(),
+            tangent: new THREE.Vector3(0, 0, 1),
+            normal: new THREE.Vector3(1, 0, 0),
+            t: 0
+        };
     }
 
     setRoadCurve(roadCurve) {
@@ -273,11 +285,17 @@ export class NewtManager {
 
     getRoadDataAtZ(z) {
         if (!this.roadCurve) {
-            return {
-                point: new THREE.Vector3(0, 0, z),
-                tangent: new THREE.Vector3(0, 0, 1),
-                normal: new THREE.Vector3(1, 0, 0)
-            };
+            if (!this._rdFallback) {
+                this._rdFallback = {
+                    point: new THREE.Vector3(),
+                    tangent: new THREE.Vector3(0, 0, 1),
+                    normal: new THREE.Vector3(1, 0, 0),
+                    t: 0
+                };
+            }
+            const fb = this._rdFallback;
+            fb.point.set(0, 0, z);
+            return fb;
         }
 
         let closestT = 0;
@@ -295,9 +313,16 @@ export class NewtManager {
 
         const point = this.roadCurve.getPoint(closestT);
         const tangent = this.roadCurve.getTangent(closestT);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+        this._rdPoint.copy(point);
+        this._rdTangent.copy(tangent);
+        this._rdNormal.set(-tangent.z, 0, tangent.x).normalize();
 
-        return { point, tangent, normal, t: closestT };
+        const result = this._rdResult;
+        result.point = this._rdPoint;
+        result.tangent = this._rdTangent;
+        result.normal = this._rdNormal;
+        result.t = closestT;
+        return result;
     }
 
     update(deltaTime, elapsedTime, playerPosition) {
@@ -558,6 +583,8 @@ export class NewtManager {
 
         setTimeout(() => {
             this.scene.remove(splat);
+            splatGeometry.dispose();
+            splatMaterial.dispose();
         }, 5000);
     }
 

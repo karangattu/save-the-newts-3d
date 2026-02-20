@@ -30,7 +30,11 @@ class Game {
         this.minPixelRatio = 0.7;
         this.currentPixelRatio = 1;
         this.qualityAdjustmentCooldown = 0;
-        this.frameTimeSamples = [];
+        // Ring buffer for adaptive quality frame timing (avoids shift() and reduce() per frame)
+        this._ftRingBuf = new Float64Array(45);
+        this._ftRingIdx = 0;
+        this._ftRingCount = 0;
+        this._ftRingSum = 0;
         this.preloadProgress = 0;
         this.preloadPromise = null;
         this.assetsPreloaded = false;
@@ -307,7 +311,9 @@ class Game {
 
         // Set state
         this.state = 'playing';
-        this.frameTimeSamples = [];
+        this._ftRingCount = 0;
+        this._ftRingIdx = 0;
+        this._ftRingSum = 0;
         this.qualityAdjustmentCooldown = 2;
     }
 
@@ -743,8 +749,6 @@ class Game {
         const cars = this.carManager.getCars();
         const playerPos = this.player.getPosition();
 
-        const activeCars = new Set(cars);
-
         for (let i = 0; i < cars.length; i++) {
             const car = cars[i];
             if (!this.carEngineSounds.has(car) && !car.isStealth) {
@@ -756,7 +760,7 @@ class Game {
         }
 
         this.carEngineSounds.forEach((sound, car) => {
-            if (!activeCars.has(car)) {
+            if (cars.indexOf(car) === -1) {
                 this.audioManager.stopCarEngine(sound);
                 this.carEngineSounds.delete(car);
             } else {
@@ -915,29 +919,39 @@ class Game {
         if (this.state !== 'playing') return;
 
         const frameMs = rawDelta * 1000;
-        this.frameTimeSamples.push(frameMs);
-        if (this.frameTimeSamples.length > 45) {
-            this.frameTimeSamples.shift();
+
+        // Ring buffer: overwrite oldest entry and maintain running sum
+        const buf = this._ftRingBuf;
+        const cap = buf.length;
+        if (this._ftRingCount >= cap) {
+            this._ftRingSum -= buf[this._ftRingIdx];
         }
+        buf[this._ftRingIdx] = frameMs;
+        this._ftRingSum += frameMs;
+        this._ftRingIdx = (this._ftRingIdx + 1) % cap;
+        if (this._ftRingCount < cap) this._ftRingCount++;
 
         if (this.qualityAdjustmentCooldown > 0) {
             this.qualityAdjustmentCooldown -= rawDelta;
             return;
         }
 
-        if (this.frameTimeSamples.length < 45) return;
+        if (this._ftRingCount < cap) return;
 
-        const total = this.frameTimeSamples.reduce((sum, value) => sum + value, 0);
-        const avgMs = total / this.frameTimeSamples.length;
+        const avgMs = this._ftRingSum / this._ftRingCount;
 
         if (avgMs > 24 && this.qualityLevel > this.minQualityLevel) {
             this.applyQualityLevel(this.qualityLevel - 1);
             this.qualityAdjustmentCooldown = 6;
-            this.frameTimeSamples = [];
+            this._ftRingCount = 0;
+            this._ftRingIdx = 0;
+            this._ftRingSum = 0;
         } else if (avgMs < 14 && this.qualityLevel < this.maxQualityLevel) {
             this.applyQualityLevel(this.qualityLevel + 1);
             this.qualityAdjustmentCooldown = 8;
-            this.frameTimeSamples = [];
+            this._ftRingCount = 0;
+            this._ftRingIdx = 0;
+            this._ftRingSum = 0;
         }
     }
 

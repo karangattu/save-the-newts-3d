@@ -19,6 +19,19 @@ export class AudioManager {
         // Footstep state
         this.lastFootstepTime = 0;
         this.footstepInterval = 400; // ms between footsteps
+
+        // Pre-allocated audio buffers (created once in init())
+        this._footstepBuffer = null;
+        this._crushNoiseBuffer = null;
+        this._nearMissBuffer = null;
+        this._carHitBuffer = null;
+        this._splashBuffer = null;
+        this._thunderBuffer = null;
+        this._attackImpactBuffer = null;
+        this._predatorNoiseBuffer = null;
+        this._breathingBuffer = null;
+        this._stormWindBuffer = null;
+        this._rainNoiseBuffer = null;
     }
     
     init() {
@@ -33,11 +46,54 @@ export class AudioManager {
         this.masterGain.connect(this.audioContext.destination);
         
         this.isInitialized = true;
+
+        // Pre-create all noise buffers once to avoid GC pressure during gameplay
+        this._preAllocateBuffers();
+    }
+
+    _preAllocateBuffers() {
+        const sr = this.audioContext.sampleRate;
+
+        this._footstepBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.08), (i, len) =>
+            Math.exp(-i / (len * 0.2))
+        );
+        this._crushNoiseBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.1), (i, len) =>
+            Math.exp(-i / (len * 0.3))
+        );
+        this._nearMissBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.3), (i, len) =>
+            Math.exp(-i / (len * 0.3))
+        );
+        this._carHitBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.5), (i, len) =>
+            Math.exp(-i / (len * 0.2))
+        );
+        this._splashBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.8), (i, len) =>
+            Math.exp(-i / (len * 0.3)) * (1 - Math.exp(-i / 500))
+        );
+        this._thunderBuffer = this._createNoiseBuffer(Math.ceil(sr * 3), (i, len) =>
+            Math.exp(-i / (len * 0.4)) * (1 - Math.exp(-i / 1000))
+        );
+        this._attackImpactBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.3), (i, len) =>
+            Math.exp(-i / (len * 0.1))
+        );
+        this._predatorNoiseBuffer = this._createNoiseBuffer(Math.ceil(sr * 1), () => 0.5);
+        this._breathingBuffer = this._createNoiseBuffer(Math.ceil(sr * 0.8), (i, len) =>
+            Math.sin((i / len) * Math.PI) * 0.5
+        );
+        this._stormWindBuffer = this._createNoiseBuffer(Math.ceil(sr * 2), () => 1);
+        this._rainNoiseBuffer = this._createNoiseBuffer(Math.ceil(sr * 2), () => 1);
+    }
+
+    _createNoiseBuffer(size, envelopeFn) {
+        const buffer = this.audioContext.createBuffer(1, size, this.audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < size; i++) {
+            data[i] = (Math.random() * 2 - 1) * envelopeFn(i, size);
+        }
+        return buffer;
     }
     
     startAmbient(level = 1) {
         if (!this.isInitialized) return;
-        console.log("AudioManager.startAmbient() - level:", level);
 
         // Wind - low frequency filtered noise (all levels, louder in storm)
         this.createWindSound(level === 3 ? 0.12 : 0.05);
@@ -173,16 +229,9 @@ export class AudioManager {
     
     createStormWind() {
         if (!this.isInitialized) return;
-        // Howling wind gusts for level 3
-        const bufferSize = 2 * this.audioContext.sampleRate;
-        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            output[i] = Math.random() * 2 - 1;
-        }
         
         const windNoise = this.audioContext.createBufferSource();
-        windNoise.buffer = noiseBuffer;
+        windNoise.buffer = this._stormWindBuffer;
         windNoise.loop = true;
         
         const bandPass = this.audioContext.createBiquadFilter();
@@ -212,18 +261,8 @@ export class AudioManager {
     }
     
     createRainSound() {
-        // Create rain using filtered noise
-        const bufferSize = 2 * this.audioContext.sampleRate;
-        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            output[i] = Math.random() * 2 - 1;
-        }
-        
-        // Main rain noise source
         const rainNoise = this.audioContext.createBufferSource();
-        rainNoise.buffer = noiseBuffer;
+        rainNoise.buffer = this._rainNoiseBuffer;
         rainNoise.loop = true;
         
         // High-pass filter to get that rain "hiss"
@@ -262,19 +301,8 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Low rumbling noise for thunder
-        const bufferSize = this.audioContext.sampleRate * 3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Envelope for thunder - quick attack, long decay
-            const env = Math.exp(-i / (bufferSize * 0.4)) * (1 - Math.exp(-i / 1000));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
         const thunderSource = this.audioContext.createBufferSource();
-        thunderSource.buffer = buffer;
+        thunderSource.buffer = this._thunderBuffer;
         
         // Low pass for rumble
         const lowPass = this.audioContext.createBiquadFilter();
@@ -425,17 +453,9 @@ export class AudioManager {
         osc.start(now);
         osc.stop(now + 0.2);
         
-        // Add a small "splat" noise
-        const bufferSize = this.audioContext.sampleRate * 0.1;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
-        }
-        
+        // Reuse pre-allocated crush noise buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._crushNoiseBuffer;
         
         const noiseGain = this.audioContext.createGain();
         noiseGain.gain.value = 0.15;
@@ -609,17 +629,9 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Whoosh - filtered noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
-        }
-        
+        // Reuse pre-allocated near-miss buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._nearMissBuffer;
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'bandpass';
@@ -732,17 +744,9 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Harsh noise burst for impact
-        const bufferSize = this.audioContext.sampleRate * 0.5;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.2));
-        }
-        
+        // Reuse pre-allocated car hit buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._carHitBuffer;
         
         const gain = this.audioContext.createGain();
         gain.gain.value = 0.5;
@@ -791,18 +795,9 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Water splash - filtered noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.8;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            const env = Math.exp(-i / (bufferSize * 0.3)) * (1 - Math.exp(-i / 500));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
+        // Reuse pre-allocated splash buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._splashBuffer;
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
@@ -835,16 +830,8 @@ export class AudioManager {
         growlOsc.frequency.setValueAtTime(baseFreq * 1.1, now + 0.5);
         
         // Add noise for texture
-        const bufferSize = this.audioContext.sampleRate * 1;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * 0.5;
-        }
-        
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._predatorNoiseBuffer;
         
         // Filter the growl
         const growlFilter = this.audioContext.createBiquadFilter();
@@ -892,17 +879,9 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Violent impact noise
-        const bufferSize = this.audioContext.sampleRate * 0.3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.1));
-        }
-        
+        // Reuse pre-allocated attack impact buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._attackImpactBuffer;
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
@@ -929,19 +908,9 @@ export class AudioManager {
         
         const audioNow = this.audioContext.currentTime;
         
-        // Footstep on wet ground - short noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.08;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Quick attack, fast decay
-            const env = Math.exp(-i / (bufferSize * 0.2));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
+        // Reuse pre-allocated footstep buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._footstepBuffer;
         
         // Low pass for muffled wet ground sound
         const filter = this.audioContext.createBiquadFilter();
@@ -990,20 +959,9 @@ export class AudioManager {
         
         const now = this.audioContext.currentTime;
         
-        // Breathing - filtered noise with rhythm
-        const bufferSize = this.audioContext.sampleRate * 0.8;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Breathing envelope
-            const phase = i / bufferSize;
-            const env = Math.sin(phase * Math.PI) * 0.5;
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
+        // Reuse pre-allocated breathing buffer
         const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
+        noiseSource.buffer = this._breathingBuffer;
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'bandpass';
