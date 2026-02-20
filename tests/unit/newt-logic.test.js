@@ -40,7 +40,7 @@ describe('NewtManager logic', () => {
         };
         manager.illuminationCheckCounter = 0;
         manager.illuminationCheckInterval = 1;
-        manager.updateRescueEffects = () => {};
+        manager.updateRescueEffects = () => { };
 
         manager.update(1.9, 120, { x: 0, z: 0 });
         expect(spawnCalls).toBe(1);
@@ -48,5 +48,44 @@ describe('NewtManager logic', () => {
 
         manager.update(1.0, 120, { x: 0, z: 0 });
         expect(spawnCalls).toBe(1);
+    });
+
+    test('rescuing bonus newt calls activateBonusBrightness', () => {
+        let brightnessActivated = false;
+        const manager = Object.create(NewtManager.prototype);
+        manager.rescueDistance = 2;
+        manager.flashlight = {
+            activateBonusBrightness: () => { brightnessActivated = true; },
+            isPointIlluminated: () => false
+        };
+        manager.releaseNewtMesh = () => { };
+        manager.newts = [{
+            mesh: {
+                position: { x: 0, y: 0, z: 0, distanceTo: () => 0, add: () => { } },
+                rotation: { x: 0, y: 0, z: 0 },
+                userData: {}
+            },
+            isBonus: true,
+            isPaused: false,
+            speed: 0,
+            startPosition: { distanceTo: () => 0 },
+            targetPosition: { distanceTo: () => 1 },
+            pauseTimer: 0,
+            pauseDuration: 0,
+            nextPauseIn: 10
+        }];
+        manager.rescuedCount = 0;
+        manager.illuminationCheckCounter = 0;
+        manager.illuminationCheckInterval = 1;
+        manager.updateRescueEffects = () => { };
+        manager.spawnTimer = 0;
+        manager.baseSpawnInterval = 10;
+
+        const rescued = manager.update(0.1, 0, { x: 0, z: 0 });
+
+        expect(brightnessActivated).toBe(true);
+        expect(manager.newts.length).toBe(0);
+        expect(manager.rescuedCount).toBe(1);
+        expect(rescued.length).toBe(1);
     });
 });

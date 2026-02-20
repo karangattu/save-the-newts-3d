@@ -74,42 +74,49 @@ export class NewtManager {
         const detail = this.qualityLevel <= 1 ? 6 : 8;
         const capsuleSegments = this.qualityLevel <= 1 ? 3 : 4;
 
-        // Simplified materials for better performance
         const bodyMaterial = new THREE.MeshStandardMaterial({
-            color: 0x5C1A0A,  // Deep chocolate-mahogany brown
-            roughness: 0.4,
-            metalness: 0.1
+            color: 0x5C1A0A,
+            roughness: 0.6,
+            metalness: 0.05
         });
 
         const bellyMaterial = new THREE.MeshStandardMaterial({
-            color: 0xF07020,  // Warm vivid orange
-            roughness: 0.5,
-            metalness: 0.1
+            color: 0xF07020,
+            roughness: 0.6,
+            metalness: 0.05
         });
 
-        // === SIMPLIFIED BODY - single capsule instead of multiple parts ===
-        const bodyGeometry = new THREE.CapsuleGeometry(0.15, 0.6, capsuleSegments, detail);
+        const bodyGeometry = new THREE.CapsuleGeometry(0.14, 0.5, capsuleSegments, detail);
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
         body.rotation.z = Math.PI / 2;
-        body.position.y = 0.12;
+        body.scale.set(1, 0.8, 1.2);
+        body.position.set(0, 0.12, 0);
         group.add(body);
 
-        // Simplified belly
-        const bellyGeometry = new THREE.CapsuleGeometry(0.12, 0.5, capsuleSegments, detail);
+        const bellyGeometry = new THREE.CapsuleGeometry(0.13, 0.48, capsuleSegments, detail);
         const belly = new THREE.Mesh(bellyGeometry, bellyMaterial);
         belly.rotation.z = Math.PI / 2;
-        belly.position.set(0, 0.08, 0);
+        belly.scale.set(1, 0.6, 1.15);
+        belly.position.set(0, 0.06, 0);
         group.add(belly);
 
-        // === SIMPLIFIED HEAD ===
+        const headGroup = new THREE.Group();
+
         const headGeometry = new THREE.SphereGeometry(0.14, detail, detail);
         const head = new THREE.Mesh(headGeometry, bodyMaterial);
-        head.scale.set(1.1, 0.7, 1.2);
-        head.position.set(0.4, 0.12, 0);
-        group.add(head);
+        head.scale.set(1.2, 0.6, 1.15);
+        headGroup.add(head);
 
-        // Eyes - no emissive glow by default, only visible when flashlight hits them
-        const eyeGeometry = new THREE.SphereGeometry(0.04, 5, 5);
+        const headBellyGeometry = new THREE.SphereGeometry(0.13, detail, detail);
+        const headBelly = new THREE.Mesh(headBellyGeometry, bellyMaterial);
+        headBelly.scale.set(1.1, 0.5, 1.1);
+        headBelly.position.set(0, -0.04, 0);
+        headGroup.add(headBelly);
+
+        headGroup.position.set(0.38, 0.12, 0);
+        group.add(headGroup);
+
+        const eyeGeometry = new THREE.SphereGeometry(0.035, 5, 5);
         const eyeMaterial = new THREE.MeshStandardMaterial({
             color: 0x222200,
             emissive: 0x000000,
@@ -117,56 +124,82 @@ export class NewtManager {
         });
 
         const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
-        leftEye.position.set(0.45, 0.18, 0.08);
+        leftEye.position.set(0.42, 0.16, 0.1);
+        leftEye.rotation.y = Math.PI / 8;
         group.add(leftEye);
 
         const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
-        rightEye.position.set(0.45, 0.18, -0.08);
+        rightEye.position.set(0.42, 0.16, -0.1);
+        rightEye.rotation.y = -Math.PI / 8;
         group.add(rightEye);
 
-        // Store eye references for illumination effect
         group.userData.eyes = { left: leftEye, right: rightEye };
 
-        // === SIMPLIFIED TAIL - single cone instead of segments ===
-        const tailGeometry = new THREE.ConeGeometry(0.12, 0.6, detail);
+        const tailGeometry = new THREE.ConeGeometry(0.12, 0.65, detail);
         const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
         tail.rotation.z = Math.PI / 2;
-        tail.position.set(-0.45, 0.1, 0);
-        group.add(tail);
+        tail.scale.set(1.0, 1.0, 0.35);
 
-        // === SIMPLIFIED LEGS - basic capsules ===
-        const legGeometry = new THREE.CapsuleGeometry(0.04, 0.15, 3, detail);
+        const tailBellyGeometry = new THREE.ConeGeometry(0.11, 0.6, detail);
+        const tailBelly = new THREE.Mesh(tailBellyGeometry, bellyMaterial);
+        tailBelly.rotation.z = Math.PI / 2;
+        tailBelly.scale.set(1.0, 1.0, 0.3);
 
-        const createLeg = (x, z, isFront) => {
-            const leg = new THREE.Mesh(legGeometry, bellyMaterial);
-            leg.position.set(x, 0.08, z);
-            leg.rotation.z = isFront ? -0.3 : 0.3;
-            return leg;
+        const tailGroup = new THREE.Group();
+        tailGroup.position.set(-0.35, 0, 0);
+
+        tail.position.set(-0.13, 0.11, 0);
+        tailBelly.position.set(-0.1, 0.08, 0);
+        tailGroup.add(tail);
+        tailGroup.add(tailBelly);
+        group.add(tailGroup);
+
+        const createLeg = (x, z, isFront, isRight) => {
+            const legGroup = new THREE.Group();
+            legGroup.position.set(x, 0.1, z);
+
+            const legMesh = new THREE.Mesh(
+                new THREE.CapsuleGeometry(0.035, 0.16, 3, detail),
+                bodyMaterial
+            );
+            legMesh.position.y = -0.07;
+            legMesh.rotation.x = isRight ? -0.5 : 0.5;
+            legMesh.rotation.z = isFront ? -0.2 : 0.2;
+
+            const foot = new THREE.Mesh(
+                new THREE.SphereGeometry(0.045, detail, detail),
+                bellyMaterial
+            );
+            foot.scale.set(1.2, 0.4, 1.2);
+            foot.position.set(isFront ? 0.02 : -0.02, -0.15, isRight ? 0.08 : -0.08);
+
+            legGroup.add(legMesh);
+            legGroup.add(foot);
+
+            return legGroup;
         };
 
-        // Front legs
-        const frontRightLeg = createLeg(0.2, 0.12, true);
-        const frontLeftLeg = createLeg(0.2, -0.12, true);
+        const frontRightLeg = createLeg(0.2, 0.1, true, true);
+        const frontLeftLeg = createLeg(0.2, -0.1, true, false);
         group.add(frontRightLeg);
         group.add(frontLeftLeg);
 
-        // Back legs
-        const backRightLeg = createLeg(-0.15, 0.12, false);
-        const backLeftLeg = createLeg(-0.15, -0.12, false);
+        const backRightLeg = createLeg(-0.15, 0.1, false, true);
+        const backLeftLeg = createLeg(-0.15, -0.1, false, false);
         group.add(backRightLeg);
         group.add(backLeftLeg);
 
-        // Scale up the whole newt
         group.scale.set(1.2, 1.2, 1.2);
 
-        // Store leg references for simple animation
         group.userData.legs = {
             frontRight: frontRightLeg,
             frontLeft: frontLeftLeg,
             backRight: backRightLeg,
             backLeft: backLeftLeg
         };
-        group.userData.tail = tail;
+        group.userData.tail = tailGroup;
+        group.userData.bodyMaterial = bodyMaterial;
+        group.userData.bellyMaterial = bellyMaterial;
 
         return group;
     }
@@ -193,12 +226,24 @@ export class NewtManager {
             eyes.right.material.emissiveIntensity = 0;
         }
 
+        if (mesh.userData.isBonus) {
+            mesh.userData.bodyMaterial.color.setHex(0xA01010); // Darker red body
+            mesh.userData.bellyMaterial.color.setHex(0xFF6347); // Tomato red belly
+            mesh.userData.bodyMaterial.emissive.setHex(0x440000);
+            mesh.userData.bellyMaterial.emissive.setHex(0x440000);
+        } else {
+            mesh.userData.bodyMaterial.color.setHex(0x5C1A0A);
+            mesh.userData.bellyMaterial.color.setHex(0xF07020);
+            mesh.userData.bodyMaterial.emissive.setHex(0x000000);
+            mesh.userData.bellyMaterial.emissive.setHex(0x000000);
+        }
+
         const legs = mesh.userData.legs;
         if (legs) {
-            legs.frontRight.rotation.set(0, 0, -0.3);
-            legs.frontLeft.rotation.set(0, 0, -0.3);
-            legs.backRight.rotation.set(0, 0, 0.3);
-            legs.backLeft.rotation.set(0, 0, 0.3);
+            legs.frontRight.rotation.set(0, 0, 0);
+            legs.frontLeft.rotation.set(0, 0, 0);
+            legs.backRight.rotation.set(0, 0, 0);
+            legs.backLeft.rotation.set(0, 0, 0);
         }
 
         if (mesh.userData.tail) {
@@ -235,6 +280,7 @@ export class NewtManager {
         } else {
             mesh.visible = true;
         }
+        mesh.userData.isBonus = Math.random() < 0.15; // 15% chance to be a bonus newt
         this.resetNewtAppearance(mesh);
 
         // Random spawn position at road edge along the curved road
@@ -277,7 +323,8 @@ export class NewtManager {
             pauseTimer: 0,
             isPaused: false,
             pauseDuration: 0,
-            nextPauseIn: 2 + Math.random() * 4
+            nextPauseIn: 2 + Math.random() * 4,
+            isBonus: mesh.userData.isBonus
         };
 
         this.newts.push(newt);
@@ -454,6 +501,9 @@ export class NewtManager {
             const distance = Math.sqrt(dx * dx + dz * dz);
 
             if (distance < this.rescueDistance) {
+                if (newt.isBonus && this.flashlight && typeof this.flashlight.activateBonusBrightness === 'function') {
+                    this.flashlight.activateBonusBrightness(5);
+                }
                 this.releaseNewtMesh(newt.mesh);
                 this.newts.splice(i, 1);
                 this.rescuedCount++;
@@ -471,7 +521,7 @@ export class NewtManager {
         this.speedMultiplier = mult;
     }
 
-    createRescueEffect(position) {
+    createRescueEffect(position, isBonus = false) {
         if (this.rescueEffects.length >= 5) {
             const oldest = this.rescueEffects.shift();
             this.scene.remove(oldest.points);
@@ -498,7 +548,7 @@ export class NewtManager {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
         const material = new THREE.PointsMaterial({
-            color: 0x44ff88,
+            color: isBonus ? 0xff4444 : 0x44ff88,
             size: 0.15,
             transparent: true,
             opacity: 1.0,

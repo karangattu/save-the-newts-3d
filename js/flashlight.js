@@ -18,6 +18,7 @@ export class Flashlight {
         this.drainMultiplier = 1;
 
         this.maxIntensity = isMobile ? 14 : 8;
+        this.bonusIntensity = this.maxIntensity * 4;
         this.flickerThreshold = 20;
         this.isFlickering = false;
         this.flickerTimer = 0;
@@ -27,6 +28,7 @@ export class Flashlight {
         this.externalDrainMultiplier = 1;
 
         this.rescuePulseTimer = 0;
+        this.bonusBrightnessTimer = 0;
 
         this.currentIntensity = this.maxIntensity;
         this.targetIntensity = this.maxIntensity;
@@ -102,6 +104,11 @@ export class Flashlight {
     }
 
     update(deltaTime, elapsedTime) {
+        if (this.bonusBrightnessTimer > 0) {
+            this.bonusBrightnessTimer -= deltaTime;
+            if (this.bonusBrightnessTimer < 0) this.bonusBrightnessTimer = 0;
+        }
+
         const elapsedMinutes = elapsedTime / 60;
         this.drainMultiplier = 1 + elapsedMinutes * 0.2;
 
@@ -116,6 +123,10 @@ export class Flashlight {
         this.targetIntensity = 0;
         if (this.isOn && this.battery > 0) {
             this.targetIntensity = (this.battery / 100) * this.maxIntensity;
+
+            if (this.bonusBrightnessTimer > 0) {
+                this.targetIntensity = this.bonusIntensity;
+            }
 
             if (this.battery < this.flickerThreshold) {
                 this.flickerTimer += deltaTime;
@@ -150,7 +161,8 @@ export class Flashlight {
                 this.rescuePulseTimer = 0;
             } else {
                 const pulseProgress = this.rescuePulseTimer / 0.35;
-                const pulseTarget = this.maxIntensity * (1 + 0.8 * pulseProgress);
+                const baseIntensity = this.bonusBrightnessTimer > 0 ? this.bonusIntensity : this.maxIntensity;
+                const pulseTarget = baseIntensity * (1 + 0.8 * pulseProgress);
                 if (pulseTarget > this.targetIntensity) this.targetIntensity = pulseTarget;
                 this.currentColorTemp += (-0.3 - this.currentColorTemp) * pulseProgress * 0.5;
             }
@@ -280,6 +292,10 @@ export class Flashlight {
         this.rescuePulseTimer = 0.35;
     }
 
+    activateBonusBrightness(duration_sec = 5) {
+        this.bonusBrightnessTimer = duration_sec;
+    }
+
     reset() {
         this.battery = 100;
         this.drainMultiplier = 1;
@@ -287,7 +303,9 @@ export class Flashlight {
         this.flickerTimer = 0;
         this.isOn = true;
         this.rescuePulseTimer = 0;
+        this.bonusBrightnessTimer = 0;
         this.currentIntensity = this.maxIntensity;
+
         this.targetIntensity = this.maxIntensity;
         this.currentColorTemp = 0;
         this.spotlight.intensity = this.maxIntensity;

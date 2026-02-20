@@ -337,10 +337,20 @@ export class UIManager {
         }, 3600);
     }
 
-    showRescueFeedback() {
+    showRescueFeedback(isBonus = false) {
         if (this.rescueFeedback) {
             this.rescueFeedback.classList.remove('show');
+            // Force reflow
             void this.rescueFeedback.offsetWidth;
+
+            if (isBonus) {
+                this.rescueFeedback.innerHTML = '<i class="fas fa-bolt"></i> Bonus Newt! Max Brightness!';
+                this.rescueFeedback.style.color = '#ffaa33';
+            } else {
+                this.rescueFeedback.innerHTML = '<i class="fas fa-frog"></i> Newt Rescued!';
+                this.rescueFeedback.style.color = '#44ff88';
+            }
+
             this.rescueFeedback.classList.add('show');
         }
     }

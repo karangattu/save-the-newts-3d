@@ -547,7 +547,7 @@ class Game {
             rescuedNewts.forEach((newt) => {
                 this.audioManager.playRescueSound();
                 this.ui.hapticSuccess();
-                this.ui.showRescueFeedback();
+                this.ui.showRescueFeedback(newt.isBonus);
 
                 // Recharge battery on rescue
                 this.flashlight.recharge(8); // +8% battery per newt
@@ -555,7 +555,7 @@ class Game {
 
                 // Rescue celebration particles
                 if (newt.mesh) {
-                    this.newtManager.createRescueEffect(newt.mesh.position);
+                    this.newtManager.createRescueEffect(newt.mesh.position, newt.isBonus);
                 }
                 this.flashlight.pulseOnRescue();
             });
