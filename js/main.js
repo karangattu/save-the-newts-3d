@@ -235,11 +235,17 @@ class Game {
     showIntroVideo() {
         this.ensureAssetsPreloaded();
 
+        // Initialize audio to ensure user interaction context
+        this.audioManager.init();
+        this.audioManager.playIntroMusic();
+
         // Show the intro video screen
         this.ui.showVideoScreen();
     }
 
     async startGameWithLoading() {
+        this.audioManager.stopIntroMusic();
+
         this.ui.showLoadingScreen('Optimizing Performance...');
         this.ui.updateLoadingProgress(this.preloadProgress, 'Optimizing Performance...');
 
