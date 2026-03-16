@@ -10,34 +10,12 @@ import { UIManager } from './ui.js';
 import { LeaderboardManager } from './leaderboard.js';
 import { PredatorManager } from './predators.js';
 
-function detectConsole() {
-    const ua = navigator.userAgent.toLowerCase();
-    return /xbox|playstation|nintendo/i.test(ua);
-}
-
 class Game {
     constructor() {
-        this.state = 'menu';
+        // Game state
+        this.state = 'menu'; // 'menu', 'playing', 'gameover', 'loading'
         this.isMobile = false;
-        this.isConsole = detectConsole();
-        this.isLowEnd = false;
         this.isVisibilityPaused = false;
-
-        // Performance & preloading
-        this.qualityLevel = 3;
-        this.minQualityLevel = 0;
-        this.maxQualityLevel = 3;
-        this.minPixelRatio = 0.7;
-        this.currentPixelRatio = 1;
-        this.qualityAdjustmentCooldown = 0;
-        // Ring buffer for adaptive quality frame timing (avoids shift() and reduce() per frame)
-        this._ftRingBuf = new Float64Array(45);
-        this._ftRingIdx = 0;
-        this._ftRingCount = 0;
-        this._ftRingSum = 0;
-        this.preloadProgress = 0;
-        this.preloadPromise = null;
-        this.assetsPreloaded = false;
 
         // Level tracking
         this.currentLevel = 1;
@@ -68,11 +46,6 @@ class Game {
         // Create UI first to detect mobile
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
-        this.isLowEnd = this.detectLowEndDevice();
-
-        this.qualityLevel = this.isLowEnd ? 1 : 3;
-        this.maxQualityLevel = this.isMobile ? 2 : 3;
-        this.minPixelRatio = this.isMobile ? 0.5 : 0.65;
 
         // Create scene renderer and camera first
         this.scene = new THREE.Scene();
@@ -80,39 +53,24 @@ class Game {
             75,
             window.innerWidth / window.innerHeight,
             0.1,
-            200
+            1000
         );
         this.camera.position.set(0, 1.7, 0);
 
-        this.renderer = new THREE.WebGLRenderer({
-            antialias: !this.isMobile && !this.isLowEnd,
-            powerPreference: 'high-performance',
-            stencil: false,
-            depth: true,
-            alpha: false
-        });
-        this.renderer.physicallyCorrectLights = true;
+        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.currentPixelRatio = Math.min(
-            window.devicePixelRatio,
-            this.getQualityPixelRatioCap(this.qualityLevel)
-        );
-        this.renderer.setPixelRatio(this.currentPixelRatio);
-        this.renderer.shadowMap.enabled = !this.isLowEnd && this.qualityLevel >= 2;
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.renderer.shadowMap.enabled = !this.isMobile;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping = this.isLowEnd ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = this.isLowEnd ? 1.05 : 1.2;
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
-        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isLowEnd);
-        this.levelManager.setQualityLevel(this.qualityLevel);
+        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
 
         // Load level 1
         const levelData = this.levelManager.loadLevel(1);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
-        this.freezeStaticObjects();
 
         // Create player with mobile flag
         this.player = new Player(
@@ -133,19 +91,13 @@ class Game {
         this.newtManager = new NewtManager(
             this.scene,
             this.flashlight,
-            this.roadCurve,
-            this.isLowEnd
+            this.roadCurve
         );
 
-        this.carManager = new CarManager(this.scene, this.roadCurve, {
-            isLowEnd: this.isLowEnd,
-            enableDynamicLights: !this.isLowEnd
-        });
+        this.carManager = new CarManager(this.scene, this.roadCurve);
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
         this.predatorManager = new PredatorManager(this.scene, this.camera);
-
-        this.applyQualityLevel(this.qualityLevel);
 
         // Setup flashlight toggle callbacks
         this.setupFlashlightToggle();
@@ -164,11 +116,8 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.currentPixelRatio = Math.min(
-            window.devicePixelRatio,
-            this.getQualityPixelRatioCap(this.qualityLevel)
-        );
-        this.renderer.setPixelRatio(this.currentPixelRatio);
+        const maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     }
 
     setupFlashlightToggle() {
@@ -233,28 +182,18 @@ class Game {
     }
 
     showIntroVideo() {
-        this.ensureAssetsPreloaded();
-
-        // Initialize audio to ensure user interaction context
-        this.audioManager.init();
-        this.audioManager.playIntroMusic();
-
         // Show the intro video screen
         this.ui.showVideoScreen();
     }
 
     async startGameWithLoading() {
-        this.audioManager.stopIntroMusic();
+        // Show loading screen
+        this.ui.showLoadingScreen('Loading Game...');
 
-        this.ui.showLoadingScreen('Optimizing Performance...');
-        this.ui.updateLoadingProgress(this.preloadProgress, 'Optimizing Performance...');
+        // Small delay for loading screen to render
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-        await this.sleep(80);
-        await this.ensureAssetsPreloaded();
-
-        this.ui.updateLoadingProgress(100, 'Ready');
-        await this.sleep(140);
-
+        // Show click to start screen (allows proper pointer lock on desktop)
         this.ui.showClickToStartScreen();
     }
 
@@ -277,15 +216,6 @@ class Game {
         this.elapsedTime = 0;
         this.lastTime = performance.now() / 1000;
 
-        // Always spawn on the current road centerline so map curve changes
-        // cannot place the player into danger zones at game start.
-        const spawnRoadData = this.levelManager.getRoadDataAtZ(0);
-        this.camera.position.set(
-            spawnRoadData.point.x,
-            this.player.playerHeight,
-            spawnRoadData.point.z
-        );
-
         // Update UI
         this.ui.hideGameOver();
         this.ui.updateBattery(100);
@@ -305,11 +235,9 @@ class Game {
         // Start ambient sounds for the current level (crickets in level 1, rain in level 2)
         this.audioManager.startAmbient(this.currentLevel);
 
-        // Lock pointer (desktop only) or request fullscreen (mobile)
+        // Lock pointer (desktop only) - this MUST happen within user gesture
         if (!this.isMobile) {
             this.player.lock();
-        } else {
-            this.ui.requestFullscreen();
         }
 
         // Show level start poster
@@ -317,10 +245,6 @@ class Game {
 
         // Set state
         this.state = 'playing';
-        this._ftRingCount = 0;
-        this._ftRingIdx = 0;
-        this._ftRingSum = 0;
-        this.qualityAdjustmentCooldown = 2;
     }
 
     async startGame() {
@@ -347,7 +271,6 @@ class Game {
         const levelData = this.levelManager.loadLevel(1);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
-        this.freezeStaticObjects();
 
         // Update player bounds
         this.player.roadBounds = this.roadBounds;
@@ -415,17 +338,10 @@ class Game {
         const levelData = this.levelManager.loadLevel(this.currentLevel);
         this.roadCurve = levelData.roadCurve;
         this.roadBounds = levelData.roadBounds;
-        this.freezeStaticObjects();
 
         // Update player
         this.player.reset();
         this.player.roadBounds = this.roadBounds;
-        const nextSpawn = this.levelManager.getRoadDataAtZ(0);
-        this.camera.position.set(
-            nextSpawn.point.x,
-            this.player.playerHeight,
-            nextSpawn.point.z
-        );
 
         // Update managers
         this.newtManager.reset();
@@ -553,7 +469,7 @@ class Game {
             rescuedNewts.forEach((newt) => {
                 this.audioManager.playRescueSound();
                 this.ui.hapticSuccess();
-                this.ui.showRescueFeedback(newt.isBonus);
+                this.ui.showRescueFeedback();
 
                 // Recharge battery on rescue
                 this.flashlight.recharge(8); // +8% battery per newt
@@ -561,7 +477,7 @@ class Game {
 
                 // Rescue celebration particles
                 if (newt.mesh) {
-                    this.newtManager.createRescueEffect(newt.mesh.position, newt.isBonus);
+                    this.newtManager.createRescueEffect(newt.mesh.position);
                 }
                 this.flashlight.pulseOnRescue();
             });
@@ -634,30 +550,20 @@ class Game {
         const playerPos = this.player.getPosition();
         const roadData = this.levelManager.getRoadDataAtZ(playerPos.z);
         const dangerZones = this.levelManager.dangerZones;
-        const roadHalfWidth = (this.levelManager.roadWidth || 12) / 2;
 
-        // Never trigger danger logic while the player is still on-road or at the shoulder.
-        const roadSafeBand = roadHalfWidth + 1.5;
-
-        if (!this._dangerVec) this._dangerVec = new THREE.Vector3();
-        this._dangerVec.subVectors(playerPos, roadData.point);
-        const lateralDist = this._dangerVec.dot(roadData.normal);
-
-        if (Math.abs(lateralDist) <= roadSafeBand) {
-            return { inDanger: false };
-        }
-
-        const cliffEdge = Math.max(dangerZones.cliff, roadHalfWidth + 3);
-        const forestEdge = Math.min(dangerZones.forest, -(roadHalfWidth + 3));
+        // Calculate lateral distance from road center
+        // Using dot product with road normal to get perp distance
+        const toPlayer = new THREE.Vector3().subVectors(playerPos, roadData.point);
+        const lateralDist = toPlayer.dot(roadData.normal);
 
         // Check cliff (right side relative to road center)
-        if (lateralDist > cliffEdge + 4) {
+        if (lateralDist > dangerZones.cliff + 4) {
             return { inDanger: true, type: 'cliff' };
         }
 
         // Check forest (left side relative to road center)
-        if (lateralDist < forestEdge) {
-            const depth = Math.abs(lateralDist - forestEdge);
+        if (lateralDist < dangerZones.forest) {
+            const depth = Math.abs(lateralDist - dangerZones.forest);
             const attackChance = Math.min(0.02 + (depth * 0.01), 0.15);
 
             if (Math.random() < attackChance) {
@@ -755,18 +661,19 @@ class Game {
         const cars = this.carManager.getCars();
         const playerPos = this.player.getPosition();
 
-        for (let i = 0; i < cars.length; i++) {
-            const car = cars[i];
+        // Add sounds for new cars
+        cars.forEach(car => {
             if (!this.carEngineSounds.has(car) && !car.isStealth) {
                 const sound = this.audioManager.playCarEngine(car);
                 if (sound) {
                     this.carEngineSounds.set(car, sound);
                 }
             }
-        }
+        });
 
+        // Update existing sounds and remove old ones
         this.carEngineSounds.forEach((sound, car) => {
-            if (cars.indexOf(car) === -1) {
+            if (!cars.includes(car)) {
                 this.audioManager.stopCarEngine(sound);
                 this.carEngineSounds.delete(car);
             } else {
@@ -823,38 +730,11 @@ class Game {
         }
     }
 
-    pollGamepadUI() {
-        const gp = this.player.gamepadIndex >= 0
-            ? navigator.getGamepads()[this.player.gamepadIndex]
-            : null;
-        if (!gp) return;
-
-        const startPressed = (gp.buttons[9] && gp.buttons[9].pressed) ||
-            (gp.buttons[0] && gp.buttons[0].pressed);
-
-        if (startPressed && !this._gamepadUIPressed) {
-            this._gamepadUIPressed = true;
-
-            if (this.state === 'start') {
-                this.showIntroVideo();
-            } else if (this.state === 'video') {
-                this.startGameWithLoading();
-            } else if (this.state === 'click-to-start') {
-                this.finalizeGameStart();
-            } else if (this.state === 'gameover') {
-                this.restartGame();
-            }
-        } else if (!startPressed) {
-            this._gamepadUIPressed = false;
-        }
-    }
-
     animate() {
         requestAnimationFrame(() => this.animate());
 
         const currentTime = performance.now() / 1000;
-        const rawDelta = Math.min(currentTime - this.lastTime, 0.1);
-        let deltaTime = rawDelta;
+        let deltaTime = Math.min(currentTime - this.lastTime, 0.1);
 
         if (this.smoothedDeltaTime === undefined) {
             this.smoothedDeltaTime = deltaTime;
@@ -868,220 +748,10 @@ class Game {
             return;
         }
 
-        this.pollGamepadUI();
         this.update(deltaTime);
-        this.updateAdaptiveQuality(rawDelta);
 
+        // Render scene
         this.renderer.render(this.scene, this.camera);
-    }
-
-    detectLowEndDevice() {
-        const cores = navigator.hardwareConcurrency || 4;
-        const memory = navigator.deviceMemory || 4;
-        return this.isMobile || this.isConsole || cores <= 4 || memory <= 4;
-    }
-
-    freezeStaticObjects() {
-        // Disable matrixAutoUpdate on all static scene objects to skip per-frame matrix recalcs
-        this.levelManager.levelObjects.forEach(obj => {
-            obj.matrixAutoUpdate = false;
-            obj.updateMatrix();
-            if (obj.children) {
-                obj.traverse(child => {
-                    child.matrixAutoUpdate = false;
-                    child.updateMatrix();
-                });
-            }
-        });
-    }
-
-    getQualityPixelRatioCap(level) {
-        const clampedLevel = Math.max(0, Math.min(3, level | 0));
-        const baseCap = this.isConsole ? 1 : (this.isMobile ? 1.0 : 1.4);
-        const qualityScale = [0.5, 0.7, 0.9, 1.0];
-        return Math.max(this.minPixelRatio, baseCap * qualityScale[clampedLevel]);
-    }
-
-    applyQualityLevel(level) {
-        const clampedLevel = Math.max(this.minQualityLevel, Math.min(this.maxQualityLevel, level | 0));
-        this.qualityLevel = clampedLevel;
-
-        if (this.renderer) {
-            this.currentPixelRatio = Math.min(
-                window.devicePixelRatio,
-                this.getQualityPixelRatioCap(clampedLevel)
-            );
-            this.renderer.setPixelRatio(this.currentPixelRatio);
-            this.renderer.shadowMap.enabled = clampedLevel >= 2 && !this.isLowEnd;
-        }
-
-        if (this.levelManager) this.levelManager.setQualityLevel(clampedLevel);
-        if (this.newtManager) this.newtManager.setQualityLevel(clampedLevel);
-        if (this.carManager) this.carManager.setQualityLevel(clampedLevel);
-        if (this.flashlight) this.flashlight.setQualityLevel(clampedLevel);
-    }
-
-    updateAdaptiveQuality(rawDelta) {
-        if (this.state !== 'playing') return;
-
-        const frameMs = rawDelta * 1000;
-
-        // Ring buffer: overwrite oldest entry and maintain running sum
-        const buf = this._ftRingBuf;
-        const cap = buf.length;
-        if (this._ftRingCount >= cap) {
-            this._ftRingSum -= buf[this._ftRingIdx];
-        }
-        buf[this._ftRingIdx] = frameMs;
-        this._ftRingSum += frameMs;
-        this._ftRingIdx = (this._ftRingIdx + 1) % cap;
-        if (this._ftRingCount < cap) this._ftRingCount++;
-
-        if (this.qualityAdjustmentCooldown > 0) {
-            this.qualityAdjustmentCooldown -= rawDelta;
-            return;
-        }
-
-        if (this._ftRingCount < cap) return;
-
-        const avgMs = this._ftRingSum / this._ftRingCount;
-
-        if (avgMs > 24 && this.qualityLevel > this.minQualityLevel) {
-            this.applyQualityLevel(this.qualityLevel - 1);
-            this.qualityAdjustmentCooldown = 6;
-            this._ftRingCount = 0;
-            this._ftRingIdx = 0;
-            this._ftRingSum = 0;
-        } else if (avgMs < 14 && this.qualityLevel < this.maxQualityLevel) {
-            this.applyQualityLevel(this.qualityLevel + 1);
-            this.qualityAdjustmentCooldown = 8;
-            this._ftRingCount = 0;
-            this._ftRingIdx = 0;
-            this._ftRingSum = 0;
-        }
-    }
-
-    updatePreloadProgress(progress, text) {
-        this.preloadProgress = Math.max(0, Math.min(100, Math.round(progress)));
-        this.ui.updateLoadingProgress(this.preloadProgress, text);
-    }
-
-    sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async ensureAssetsPreloaded() {
-        if (this.assetsPreloaded) return;
-        if (this.preloadPromise) return this.preloadPromise;
-
-        this.preloadPromise = this.preloadAssets().finally(() => {
-            this.preloadPromise = null;
-        });
-
-        return this.preloadPromise;
-    }
-
-    async preloadAssets() {
-        if (this.assetsPreloaded) return;
-
-        const originalLevel = this.currentLevel;
-        const steps = [
-            {
-                text: 'Prewarming object pools...',
-                run: async () => {
-                    this.newtManager.prewarmPool(this.isLowEnd ? 8 : 14);
-                    this.predatorManager.prewarmPool();
-                    this.levelManager.prewarmSplashPool();
-                    await this.sleep(16);
-                }
-            },
-            {
-                text: 'Precompiling vehicles and creatures...',
-                run: async () => {
-                    await this.warmVehicleAndCreatureShaders();
-                }
-            },
-            {
-                text: 'Precompiling all level environments...',
-                run: async () => {
-                    for (let level = 1; level <= 3; level++) {
-                        const levelData = this.levelManager.loadLevel(level);
-                        this.roadCurve = levelData.roadCurve;
-                        this.roadBounds = levelData.roadBounds;
-                        this.player.roadBounds = this.roadBounds;
-                        this.newtManager.setRoadCurve(this.roadCurve);
-                        this.carManager.setRoadCurve(this.roadCurve);
-                        this.freezeStaticObjects();
-
-                        this.renderer.compile(this.scene, this.camera);
-                        this.renderer.render(this.scene, this.camera);
-                        await this.sleep(18);
-                    }
-                }
-            },
-            {
-                text: 'Finalizing optimization...',
-                run: async () => {
-                    const levelData = this.levelManager.loadLevel(originalLevel);
-                    this.roadCurve = levelData.roadCurve;
-                    this.roadBounds = levelData.roadBounds;
-                    this.player.roadBounds = this.roadBounds;
-                    this.newtManager.setRoadCurve(this.roadCurve);
-                    this.carManager.setRoadCurve(this.roadCurve);
-                    this.freezeStaticObjects();
-
-                    this.player.reset();
-                    this.newtManager.reset();
-                    this.carManager.reset();
-                    this.predatorManager.reset();
-                    this.flashlight.reset();
-
-                    await this.sleep(16);
-                }
-            }
-        ];
-
-        for (let i = 0; i < steps.length; i++) {
-            const startProgress = Math.round((i / steps.length) * 100);
-            this.updatePreloadProgress(startProgress, steps[i].text);
-            await steps[i].run();
-            const endProgress = Math.round(((i + 1) / steps.length) * 100);
-            this.updatePreloadProgress(endProgress, steps[i].text);
-        }
-
-        this.assetsPreloaded = true;
-        this.updatePreloadProgress(100, 'Ready');
-    }
-
-    async warmVehicleAndCreatureShaders() {
-        this.carManager.carPool.forEach(pool => {
-            pool.meshes.forEach(mesh => {
-                mesh.visible = true;
-            });
-        });
-
-        const previewNewt = this.newtManager.getNewtFromPool();
-        previewNewt.visible = true;
-        previewNewt.position.set(0, 0, 3);
-        if (!previewNewt.parent) this.scene.add(previewNewt);
-
-        const previewLion = this.predatorManager.acquirePredator('mountain lion');
-        previewLion.position.set(2.5, 0, 5);
-        if (!previewLion.parent) this.scene.add(previewLion);
-
-        this.renderer.compile(this.scene, this.camera);
-        this.renderer.render(this.scene, this.camera);
-
-        this.newtManager.releaseNewtMesh(previewNewt);
-        this.predatorManager.releasePredator(previewLion);
-
-        this.carManager.carPool.forEach(pool => {
-            pool.meshes.forEach(mesh => {
-                mesh.visible = false;
-            });
-        });
-
-        await this.sleep(16);
     }
 }
 

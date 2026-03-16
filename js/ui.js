@@ -76,9 +76,6 @@ export class UIManager {
         // Create click to start screen
         this.createClickToStartScreen();
 
-        // Create fullscreen button
-        this.createFullscreenButton();
-
         // Load saved player name
         const savedName = localStorage.getItem('newtRescuePlayerName');
         if (savedName && this.playerNameInput) {
@@ -130,36 +127,30 @@ export class UIManager {
                 </div>
                 <h2 id="loading-text">Loading...</h2>
                 <p class="loading-subtitle">Preparing the rescue mission</p>
-                <div class="loading-progress-bar">
-                    <div id="loading-progress-fill"></div>
-                </div>
-                <p id="loading-progress-label">0%</p>
             </div>
         `;
         document.body.appendChild(loadingScreen);
         this.loadingScreen = loadingScreen;
         this.loadingText = document.getElementById('loading-text');
-        this.loadingProgressFill = document.getElementById('loading-progress-fill');
-        this.loadingProgressLabel = document.getElementById('loading-progress-label');
     }
 
     createClickToStartScreen() {
         const clickScreen = document.createElement('div');
         clickScreen.id = 'click-to-start-screen';
         clickScreen.className = 'overlay hidden';
-        const action = this.isMobile ? 'Tap' : 'Click';
         clickScreen.innerHTML = `
             <div class="overlay-content click-to-start-content">
                 <div class="click-prompt">
                     <i class="fas fa-hand-pointer"></i>
-                    <h2>${action} to Start</h2>
-                    <p>${action} anywhere to begin the rescue mission</p>
+                    <h2>Click to Start</h2>
+                    <p>Click anywhere to begin the rescue mission</p>
                 </div>
             </div>
         `;
         document.body.appendChild(clickScreen);
         this.clickToStartScreen = clickScreen;
 
+        // Add click handler
         clickScreen.addEventListener('click', () => {
             this.hideClickToStartScreen();
             if (this.onClickToStartCallback) {
@@ -251,28 +242,11 @@ export class UIManager {
         this.loadingText.textContent = text;
         this.loadingScreen.classList.remove('hidden');
         this.hideGameScreen();
-        this.updateLoadingProgress(0);
     }
 
     hideLoadingScreen() {
         this.loadingScreen.classList.add('hidden');
         this.showGameScreen();
-    }
-
-    updateLoadingProgress(progress = 0, text = '') {
-        const clamped = Math.max(0, Math.min(100, Math.round(progress)));
-
-        if (this.loadingProgressFill) {
-            this.loadingProgressFill.style.width = `${clamped}%`;
-        }
-
-        if (this.loadingProgressLabel) {
-            this.loadingProgressLabel.textContent = `${clamped}%`;
-        }
-
-        if (text && this.loadingText) {
-            this.loadingText.textContent = text;
-        }
     }
 
     updateLevel(level) {
@@ -337,20 +311,10 @@ export class UIManager {
         }, 3600);
     }
 
-    showRescueFeedback(isBonus = false) {
+    showRescueFeedback() {
         if (this.rescueFeedback) {
             this.rescueFeedback.classList.remove('show');
-            // Force reflow
             void this.rescueFeedback.offsetWidth;
-
-            if (isBonus) {
-                this.rescueFeedback.innerHTML = '<i class="fas fa-bolt"></i> Bonus Newt! Max Brightness!';
-                this.rescueFeedback.style.color = '#ffaa33';
-            } else {
-                this.rescueFeedback.innerHTML = '<i class="fas fa-frog"></i> Newt Rescued!';
-                this.rescueFeedback.style.color = '#44ff88';
-            }
-
             this.rescueFeedback.classList.add('show');
         }
     }
@@ -770,10 +734,12 @@ export class UIManager {
         this.restartButton.addEventListener('click', callback);
     }
 
+    // Flashlight toggle callback setter
     onFlashlightToggle(callback) {
         this.onFlashlightToggleCallback = callback;
     }
 
+    // Update flashlight button appearance
     updateFlashlightButton(isOn) {
         if (this.flashlightToggleBtn) {
             if (isOn) {
@@ -783,72 +749,6 @@ export class UIManager {
                 this.flashlightToggleBtn.classList.add('off');
                 this.flashlightToggleBtn.innerHTML = '<i class="far fa-lightbulb"></i><span class="btn-label">Off</span>';
             }
-        }
-    }
-
-    createFullscreenButton() {
-        this.fullscreenStartBtn = document.getElementById('fullscreen-start-btn');
-        if (this.fullscreenStartBtn) {
-            this.fullscreenStartBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleFullscreen();
-            });
-        }
-
-        const btn = document.createElement('button');
-        btn.id = 'fullscreen-btn';
-        btn.innerHTML = '<i class="fas fa-expand"></i>';
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.toggleFullscreen();
-        });
-        document.body.appendChild(btn);
-        this.fullscreenBtn = btn;
-
-        document.addEventListener('fullscreenchange', () => this.syncFullscreenIcon());
-        document.addEventListener('webkitfullscreenchange', () => this.syncFullscreenIcon());
-    }
-
-    toggleFullscreen() {
-        const doc = document;
-        const el = doc.documentElement;
-        const isFS = doc.fullscreenElement || doc.webkitFullscreenElement;
-        if (isFS) {
-            if (doc.exitFullscreen) {
-                doc.exitFullscreen();
-            } else if (doc.webkitExitFullscreen) {
-                doc.webkitExitFullscreen();
-            }
-        } else {
-            if (el.requestFullscreen) {
-                el.requestFullscreen();
-            } else if (el.webkitRequestFullscreen) {
-                el.webkitRequestFullscreen();
-            }
-        }
-    }
-
-    requestFullscreen() {
-        const el = document.documentElement;
-        if (document.fullscreenElement || document.webkitFullscreenElement) return;
-        if (el.requestFullscreen) {
-            el.requestFullscreen();
-        } else if (el.webkitRequestFullscreen) {
-            el.webkitRequestFullscreen();
-        }
-    }
-
-    syncFullscreenIcon() {
-        const isFS = document.fullscreenElement || document.webkitFullscreenElement;
-        if (this.fullscreenBtn) {
-            this.fullscreenBtn.innerHTML = isFS
-                ? '<i class="fas fa-compress"></i>'
-                : '<i class="fas fa-expand"></i>';
-        }
-        if (this.fullscreenStartBtn) {
-            this.fullscreenStartBtn.innerHTML = isFS
-                ? '<i class="fas fa-compress"></i> Exit Fullscreen'
-                : '<i class="fas fa-expand"></i> Fullscreen';
         }
     }
 }

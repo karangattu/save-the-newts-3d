@@ -1,0 +1,49 @@
+name: Check GitHub Pages site
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REPOSITORY_OWNER: ${{ github.repository_owner }}
+      REPOSITORY_NAME: ${{ github.event.repository.name }}
+      PAGES_URL_OVERRIDE: ${{ vars.PAGES_URL }}
+      EXPECTED_TEXT: Save the Newts 3D Game
+    steps:
+      - name: Resolve site URL
+        id: site
+        run: |
+          set -euo pipefail
+          site_url="${PAGES_URL_OVERRIDE:-https://${REPOSITORY_OWNER}.github.io/${REPOSITORY_NAME}/}"
+          echo "site_url=${site_url}" >> "$GITHUB_OUTPUT"
+          echo "Using ${site_url}"
+
+      - name: Check homepage is reachable
+        env:
+          SITE_URL: ${{ steps.site.outputs.site_url }}
+        run: |
+          set -euo pipefail
+          response_file="${RUNNER_TEMP}/pages-response.html"
+          http_code="$(curl -sS -L -o "$response_file" -w '%{http_code}' "$SITE_URL")"
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "Expected HTTP 200 from $SITE_URL but got $http_code"
+            exit 1
+          fi
+
+          grep -F "$EXPECTED_TEXT" "$response_file" >/dev/null
+
+      - name: Check main script is served
+        env:
+          SITE_URL: ${{ steps.site.outputs.site_url }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "${SITE_URL%/}/js/main.js" >/dev/null
