@@ -12,16 +12,16 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.44.0-jammy
+      options: --ipc=host
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Install deps
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         run: npm ci
 
       - name: Start static server
@@ -31,9 +31,6 @@ jobs:
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 10000
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
 
       - name: Run unit tests
         id: unit_tests
@@ -59,16 +56,16 @@ jobs:
   smoke:
     needs: unit-tests
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.44.0-jammy
+      options: --ipc=host
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Install deps
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         run: npm ci
 
       - name: Start static server
@@ -78,9 +75,6 @@ jobs:
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 10000
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps
 
       - name: Run smoke tests (Playwright)
         id: smoke_tests
