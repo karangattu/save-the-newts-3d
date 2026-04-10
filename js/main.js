@@ -63,6 +63,8 @@ class Game {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
         this.renderer.shadowMap.enabled = !this.isMobile;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
         this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
