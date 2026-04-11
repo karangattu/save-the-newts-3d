@@ -11,13 +11,18 @@ permissions:
 jobs:
   smoke-check:
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-jammy
+      options: --ipc=host
     timeout-minutes: 10
     env:
       REPOSITORY_OWNER: ${{ github.repository_owner }}
       REPOSITORY_NAME: ${{ github.event.repository.name }}
       PAGES_URL_OVERRIDE: ${{ vars.PAGES_URL }}
-      EXPECTED_TEXT: Save the Newts 3D Game
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Resolve site URL
         id: site
         run: |
@@ -26,24 +31,14 @@ jobs:
           echo "site_url=${site_url}" >> "$GITHUB_OUTPUT"
           echo "Using ${site_url}"
 
-      - name: Check homepage is reachable
+      - name: Install deps
         env:
-          SITE_URL: ${{ steps.site.outputs.site_url }}
-        run: |
-          set -euo pipefail
-          response_file="${RUNNER_TEMP}/pages-response.html"
-          http_code="$(curl -sS -L -o "$response_file" -w '%{http_code}' "$SITE_URL")"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+        run: npm ci
 
-          if [ "$http_code" -ne 200 ]; then
-            echo "Expected HTTP 200 from $SITE_URL but got $http_code"
-            exit 1
-          fi
-
-          grep -F "$EXPECTED_TEXT" "$response_file" >/dev/null
-
-      - name: Check main script is served
+      - name: Run browser leaderboard smoke check
         env:
-          SITE_URL: ${{ steps.site.outputs.site_url }}
-        run: |
-          set -euo pipefail
-          curl -fsSL "${SITE_URL%/}/js/main.js" >/dev/null
+          CI: true
+          PAGES_HEALTH_CHECK_URL: ${{ steps.site.outputs.site_url }}
+          PAGES_HEALTH_CHECK_ROWS: 5
+        run: node .github/scripts/pages-health-check.mjs
