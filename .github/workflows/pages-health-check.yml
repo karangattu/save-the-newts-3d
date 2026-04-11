@@ -25,6 +25,7 @@ jobs:
 
       - name: Resolve site URL
         id: site
+        shell: bash
         run: |
           set -euo pipefail
           site_url="${PAGES_URL_OVERRIDE:-https://${REPOSITORY_OWNER}.github.io/${REPOSITORY_NAME}/}"
