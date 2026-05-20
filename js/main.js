@@ -34,6 +34,9 @@ class Game {
         // Car engine sounds
         this.carEngineSounds = new Map();
 
+        // Reusable vectors for render loop optimizations
+        this._tmpToPlayer = new THREE.Vector3();
+
         // Initialize systems
         this.initSystems();
         this.setupEventListeners();
@@ -95,11 +98,13 @@ class Game {
             this.flashlight,
             this.roadCurve
         );
+        this.newtManager.prewarmPool(15);
 
         this.carManager = new CarManager(this.scene, this.roadCurve);
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
         this.predatorManager = new PredatorManager(this.scene, this.camera);
+        this.predatorManager.prewarmPool();
 
         // Setup flashlight toggle callbacks
         this.setupFlashlightToggle();
@@ -555,7 +560,7 @@ class Game {
 
         // Calculate lateral distance from road center
         // Using dot product with road normal to get perp distance
-        const toPlayer = new THREE.Vector3().subVectors(playerPos, roadData.point);
+        const toPlayer = this._tmpToPlayer.subVectors(playerPos, roadData.point);
         const lateralDist = toPlayer.dot(roadData.normal);
 
         // Check cliff (right side relative to road center)

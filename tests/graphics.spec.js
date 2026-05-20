@@ -132,4 +132,90 @@ test.describe('Graphics and flashlight enhancements', () => {
 
         expect(pulseResult.pulseBoosted).toBeTruthy();
     });
+
+    test('newts have species-specific high-quality graphics and eye glow behaviors', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const config = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { NewtManager } = await import('/js/newts.js');
+
+            const scene = new THREE.Scene();
+            const flashlight = { isPointIlluminated: () => true };
+            const manager = new NewtManager(scene, flashlight, null, false);
+            
+            const californiaNewt = manager.createNewtMesh();
+            const redBelliedNewt = manager.createNewtMesh();
+            redBelliedNewt.userData.isBonus = true;
+
+            manager.resetNewtAppearance(californiaNewt);
+            manager.resetNewtAppearance(redBelliedNewt);
+
+            const caliEyes = californiaNewt.userData.eyes;
+            const rbEyes = redBelliedNewt.userData.eyes;
+
+            const hasCaliPupil = caliEyes && caliEyes.left.children.length === 1;
+            const hasRbPupil = rbEyes && rbEyes.left.children.length === 1;
+
+            // Trigger illumination updates
+            const mockCaliNewtObj = {
+                mesh: californiaNewt,
+                walkCycle: 0,
+                isIlluminated: false,
+                illuminationTime: 0,
+                isPaused: true,
+                pauseTimer: 0,
+                pauseDuration: 999,
+                nextPauseIn: 999
+            };
+            const mockRbNewtObj = {
+                mesh: redBelliedNewt,
+                walkCycle: 0,
+                isIlluminated: false,
+                illuminationTime: 0,
+                isPaused: true,
+                pauseTimer: 0,
+                pauseDuration: 999,
+                nextPauseIn: 999
+            };
+
+            manager.newts = [mockCaliNewtObj, mockRbNewtObj];
+            // Pass true to force illumination check
+            manager.update(0.016, 0.016, new THREE.Vector3(0, 0, 0));
+
+            return {
+                caliBodyColor: '#' + californiaNewt.userData.bodyMaterial.color.getHexString(),
+                caliBellyColor: '#' + californiaNewt.userData.bellyMaterial.color.getHexString(),
+                caliEyeColor: '#' + caliEyes.left.material.color.getHexString(),
+                hasCaliBump: !!californiaNewt.userData.bodyMaterial.bumpMap,
+                hasCaliPupil,
+
+                rbBodyColor: '#' + redBelliedNewt.userData.bodyMaterial.color.getHexString(),
+                rbBellyColor: '#' + redBelliedNewt.userData.bellyMaterial.color.getHexString(),
+                rbEyeColor: '#' + rbEyes.left.material.color.getHexString(),
+                hasRbBump: !!redBelliedNewt.userData.bodyMaterial.bumpMap,
+                hasRbPupil,
+
+                caliEmissiveHex: '#' + caliEyes.left.material.emissive.getHexString(),
+                rbEmissiveHex: '#' + rbEyes.left.material.emissive.getHexString()
+            };
+        });
+
+        expect(config.caliBodyColor.toLowerCase()).toBe('#5c2b15');
+        expect(config.caliBellyColor.toLowerCase()).toBe('#ffaa00');
+        expect(config.caliEyeColor.toLowerCase()).toBe('#ddaa20');
+        expect(config.hasCaliBump).toBeTruthy();
+        expect(config.hasCaliPupil).toBeTruthy();
+
+        expect(config.rbBodyColor.toLowerCase()).toBe('#151210');
+        expect(config.rbBellyColor.toLowerCase()).toBe('#ff2400');
+        expect(config.rbEyeColor.toLowerCase()).toBe('#0f0c0b');
+        expect(config.hasRbBump).toBeTruthy();
+        expect(config.hasRbPupil).toBeTruthy();
+
+        // California eyes should be glowing/emissive
+        expect(config.caliEmissiveHex.toLowerCase()).toBe('#ffcc00');
+        // Red-bellied eyes should remain dark
+        expect(config.rbEmissiveHex.toLowerCase()).toBe('#000000');
+    });
 });

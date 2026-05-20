@@ -3,6 +3,45 @@ import * as THREE from 'three';
 const _moveDir = new THREE.Vector3();
 const _scaledDir = new THREE.Vector3();
 
+let wartyBumpMap = null;
+function getWartyBumpMap() {
+    if (wartyBumpMap) return wartyBumpMap;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Base height: middle gray (neutral)
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, 128, 128);
+
+    // Create warty bumps (lighter gray = raised)
+    for (let i = 0; i < 250; i++) {
+        const x = Math.random() * 128;
+        const y = Math.random() * 128;
+        const radius = 1 + Math.random() * 3;
+        
+        // Draw radial gradient for smooth bump
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        grad.addColorStop(0, '#d0d0d0'); // Raised peak
+        grad.addColorStop(0.4, '#b0b0b0');
+        grad.addColorStop(1, '#808080'); // Base flat level
+        
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(3, 1.5);
+    wartyBumpMap = texture;
+    return wartyBumpMap;
+}
+
 export class NewtManager {
     constructor(scene, flashlight, roadCurve = null, isLowEnd = false) {
         this.scene = scene;
@@ -66,6 +105,7 @@ export class NewtManager {
         }
 
         this.roadLength = Math.max(280, maxZ - minZ);
+        this.precomputeRoadData();
     }
 
     createNewtMesh() {
@@ -74,16 +114,24 @@ export class NewtManager {
         const detail = this.qualityLevel <= 1 ? 6 : 8;
         const capsuleSegments = this.qualityLevel <= 1 ? 3 : 4;
 
+        const bumpMap = getWartyBumpMap();
+
         const bodyMaterial = new THREE.MeshStandardMaterial({
             color: 0x5C1A0A,
-            roughness: 0.6,
-            metalness: 0.05
+            roughness: 0.7,
+            metalness: 0.05,
+            bumpMap: bumpMap,
+            bumpScale: 0.012,
+            roughnessMap: bumpMap
         });
 
         const bellyMaterial = new THREE.MeshStandardMaterial({
             color: 0xF07020,
-            roughness: 0.6,
-            metalness: 0.05
+            roughness: 0.7,
+            metalness: 0.05,
+            bumpMap: bumpMap,
+            bumpScale: 0.01,
+            roughnessMap: bumpMap
         });
 
         const bodyGeometry = new THREE.CapsuleGeometry(0.14, 0.5, capsuleSegments, detail);
@@ -116,19 +164,35 @@ export class NewtManager {
         headGroup.position.set(0.38, 0.12, 0);
         group.add(headGroup);
 
-        const eyeGeometry = new THREE.SphereGeometry(0.035, 5, 5);
-        const eyeMaterial = new THREE.MeshStandardMaterial({
-            color: 0x222200,
-            emissive: 0x000000,
-            emissiveIntensity: 0
+        const eyeGeometry = new THREE.SphereGeometry(0.035, 8, 8);
+        const pupilGeometry = new THREE.SphereGeometry(0.016, 6, 6);
+        pupilGeometry.scale(1, 1, 0.35); // flatten pupil
+
+        const leftEyeMaterial = new THREE.MeshStandardMaterial({
+            color: 0xFFAA00,
+            roughness: 0.1,
+            metalness: 0.1
+        });
+        const rightEyeMaterial = leftEyeMaterial.clone();
+
+        const pupilMaterial = new THREE.MeshStandardMaterial({
+            color: 0x000000,
+            roughness: 0.05,
+            metalness: 0.1
         });
 
-        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
+        const leftEye = new THREE.Mesh(eyeGeometry, leftEyeMaterial);
+        const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        leftPupil.position.set(0, 0, 0.031); // position at the front of the iris
+        leftEye.add(leftPupil);
         leftEye.position.set(0.42, 0.16, 0.1);
         leftEye.rotation.y = Math.PI / 8;
         group.add(leftEye);
 
-        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial.clone());
+        const rightEye = new THREE.Mesh(eyeGeometry, rightEyeMaterial);
+        const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        rightPupil.position.set(0, 0, 0.031);
+        rightEye.add(rightPupil);
         rightEye.position.set(0.42, 0.16, -0.1);
         rightEye.rotation.y = -Math.PI / 8;
         group.add(rightEye);
@@ -216,24 +280,26 @@ export class NewtManager {
     resetNewtAppearance(mesh) {
         mesh.rotation.set(0, 0, 0);
 
+        const isBonus = !!mesh.userData.isBonus;
         const eyes = mesh.userData.eyes;
         if (eyes) {
-            eyes.left.material.color.setHex(0x222200);
+            const eyeColor = isBonus ? 0x0F0C0B : 0xFFAA00;
+            eyes.left.material.color.setHex(eyeColor);
             eyes.left.material.emissive.setHex(0x000000);
             eyes.left.material.emissiveIntensity = 0;
-            eyes.right.material.color.setHex(0x222200);
+            eyes.right.material.color.setHex(eyeColor);
             eyes.right.material.emissive.setHex(0x000000);
             eyes.right.material.emissiveIntensity = 0;
         }
 
-        if (mesh.userData.isBonus) {
-            mesh.userData.bodyMaterial.color.setHex(0xA01010); // Darker red body
-            mesh.userData.bellyMaterial.color.setHex(0xFF6347); // Tomato red belly
-            mesh.userData.bodyMaterial.emissive.setHex(0x440000);
-            mesh.userData.bellyMaterial.emissive.setHex(0x440000);
+        if (isBonus) {
+            mesh.userData.bodyMaterial.color.setHex(0x151210);
+            mesh.userData.bellyMaterial.color.setHex(0xFF2400);
+            mesh.userData.bodyMaterial.emissive.setHex(0x220000);
+            mesh.userData.bellyMaterial.emissive.setHex(0x220000);
         } else {
-            mesh.userData.bodyMaterial.color.setHex(0x5C1A0A);
-            mesh.userData.bellyMaterial.color.setHex(0xF07020);
+            mesh.userData.bodyMaterial.color.setHex(0x5C2B15);
+            mesh.userData.bellyMaterial.color.setHex(0xFFAA00);
             mesh.userData.bodyMaterial.emissive.setHex(0x000000);
             mesh.userData.bellyMaterial.emissive.setHex(0x000000);
         }
@@ -263,6 +329,8 @@ export class NewtManager {
         while (this.newtPool.length < targetCount) {
             const mesh = this.createNewtMesh();
             mesh.visible = false;
+            mesh.position.set(0, -100, 0);
+            this.scene.add(mesh);
             this.newtPool.push(mesh);
         }
     }
@@ -330,46 +398,43 @@ export class NewtManager {
         this.newts.push(newt);
     }
 
+    precomputeRoadData() {
+        this.precomputedRoadData = [];
+        if (!this.roadCurve) return;
+
+        const steps = 300;
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const point = this.roadCurve.getPoint(t);
+            const tangent = this.roadCurve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            this.precomputedRoadData.push({
+                point,
+                tangent,
+                normal,
+                t
+            });
+        }
+    }
+
     getRoadDataAtZ(z) {
-        if (!this.roadCurve) {
-            if (!this._rdFallback) {
-                this._rdFallback = {
-                    point: new THREE.Vector3(),
-                    tangent: new THREE.Vector3(0, 0, 1),
-                    normal: new THREE.Vector3(1, 0, 0),
-                    t: 0
-                };
-            }
-            const fb = this._rdFallback;
-            fb.point.set(0, 0, z);
-            return fb;
+        if (!this.roadCurve || !this.precomputedRoadData || this.precomputedRoadData.length === 0) {
+            this._rdFallback.point.set(0, 0, z);
+            return this._rdFallback;
         }
 
-        let closestT = 0;
-        let minZDiff = Infinity;
+        let closestData = this.precomputedRoadData[0];
+        let minZDiff = Math.abs(closestData.point.z - z);
 
-        for (let i = 0; i <= 100; i++) {
-            const t = i / 100;
-            const point = this.roadCurve.getPoint(t);
-            const zDiff = Math.abs(point.z - z);
+        for (let i = 1; i < this.precomputedRoadData.length; i++) {
+            const data = this.precomputedRoadData[i];
+            const zDiff = Math.abs(data.point.z - z);
             if (zDiff < minZDiff) {
                 minZDiff = zDiff;
-                closestT = t;
+                closestData = data;
             }
         }
-
-        const point = this.roadCurve.getPoint(closestT);
-        const tangent = this.roadCurve.getTangent(closestT);
-        this._rdPoint.copy(point);
-        this._rdTangent.copy(tangent);
-        this._rdNormal.set(-tangent.z, 0, tangent.x).normalize();
-
-        const result = this._rdResult;
-        result.point = this._rdPoint;
-        result.tangent = this._rdTangent;
-        result.normal = this._rdNormal;
-        result.t = closestT;
-        return result;
+        return closestData;
     }
 
     update(deltaTime, elapsedTime, playerPosition) {
@@ -467,14 +532,13 @@ export class NewtManager {
                 ? this.flashlight.isPointIlluminated(newt.mesh.position)
                 : newt.isIlluminated;
 
-            // Only update eye materials if illumination state changed
             if (newt.isIlluminated !== isIlluminated) {
                 newt.isIlluminated = isIlluminated;
 
-                // Update eye glow based on flashlight illumination
                 const eyes = newt.mesh.userData.eyes;
+                const isBonus = !!newt.mesh.userData.isBonus;
                 if (eyes) {
-                    if (isIlluminated) {
+                    if (isIlluminated && !isBonus) {
                         eyes.left.material.color.setHex(0xDDAA20);
                         eyes.left.material.emissive.setHex(0xFFCC00);
                         eyes.left.material.emissiveIntensity = 0.8;
@@ -482,10 +546,11 @@ export class NewtManager {
                         eyes.right.material.emissive.setHex(0xFFCC00);
                         eyes.right.material.emissiveIntensity = 0.8;
                     } else {
-                        eyes.left.material.color.setHex(0x222200);
+                        const eyeColor = isBonus ? 0x0F0C0B : 0xFFAA00;
+                        eyes.left.material.color.setHex(eyeColor);
                         eyes.left.material.emissive.setHex(0x000000);
                         eyes.left.material.emissiveIntensity = 0;
-                        eyes.right.material.color.setHex(0x222200);
+                        eyes.right.material.color.setHex(eyeColor);
                         eyes.right.material.emissive.setHex(0x000000);
                         eyes.right.material.emissiveIntensity = 0;
                     }

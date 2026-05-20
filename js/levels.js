@@ -319,6 +319,7 @@ export class LevelManager {
     createRoad(wetness = 0) {
         const roadWidth = 12;
         this.createAlmaBridgeRoadCurve();
+        this.precomputeRoadData();
         
         const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 250);
         const roadMaterial = new THREE.MeshStandardMaterial({
@@ -834,22 +835,51 @@ export class LevelManager {
         });
     }
     
-    getRoadDataAtZ(z) {
-        if (!this.roadCurve) {
-            return { point: new THREE.Vector3(0, 0, z), tangent: new THREE.Vector3(0, 0, 1), normal: new THREE.Vector3(1, 0, 0) };
-        }
-        let closestT = 0;
-        let minZDiff = Infinity;
-        for (let i = 0; i <= 100; i++) {
-            const t = i / 100;
+    precomputeRoadData() {
+        this.precomputedRoadData = [];
+        if (!this.roadCurve) return;
+
+        const steps = 300;
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
             const point = this.roadCurve.getPoint(t);
-            const zDiff = Math.abs(point.z - z);
-            if (zDiff < minZDiff) { minZDiff = zDiff; closestT = t; }
+            const tangent = this.roadCurve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            this.precomputedRoadData.push({
+                point,
+                tangent,
+                normal,
+                t
+            });
         }
-        const point = this.roadCurve.getPoint(closestT);
-        const tangent = this.roadCurve.getTangent(closestT);
-        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-        return { point, tangent, normal, t: closestT };
+    }
+    
+    getRoadDataAtZ(z) {
+        if (!this.roadCurve || !this.precomputedRoadData || this.precomputedRoadData.length === 0) {
+            if (!this._fallbackRoadData) {
+                this._fallbackRoadData = {
+                    point: new THREE.Vector3(0, 0, z),
+                    tangent: new THREE.Vector3(0, 0, 1),
+                    normal: new THREE.Vector3(1, 0, 0),
+                    t: 0
+                };
+            }
+            this._fallbackRoadData.point.set(0, 0, z);
+            return this._fallbackRoadData;
+        }
+
+        let closestData = this.precomputedRoadData[0];
+        let minZDiff = Math.abs(closestData.point.z - z);
+
+        for (let i = 1; i < this.precomputedRoadData.length; i++) {
+            const data = this.precomputedRoadData[i];
+            const zDiff = Math.abs(data.point.z - z);
+            if (zDiff < minZDiff) {
+                minZDiff = zDiff;
+                closestData = data;
+            }
+        }
+        return closestData;
     }
     
     getCurrentLevel() { return this.currentLevel; }
