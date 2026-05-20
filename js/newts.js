@@ -118,7 +118,7 @@ export class NewtManager {
 
         const bodyMaterial = new THREE.MeshStandardMaterial({
             color: 0x5C1A0A,
-            roughness: 0.7,
+            roughness: 0.38,
             metalness: 0.05,
             bumpMap: bumpMap,
             bumpScale: 0.012,
@@ -127,7 +127,7 @@ export class NewtManager {
 
         const bellyMaterial = new THREE.MeshStandardMaterial({
             color: 0xF07020,
-            roughness: 0.7,
+            roughness: 0.38,
             metalness: 0.05,
             bumpMap: bumpMap,
             bumpScale: 0.01,
@@ -157,15 +157,15 @@ export class NewtManager {
 
         const headBellyGeometry = new THREE.SphereGeometry(0.13, detail, detail);
         const headBelly = new THREE.Mesh(headBellyGeometry, bellyMaterial);
-        headBelly.scale.set(1.1, 0.5, 1.1);
-        headBelly.position.set(0, -0.04, 0);
+        headBelly.scale.set(1.15, 0.55, 1.12);
+        headBelly.position.set(0.02, -0.02, 0);
         headGroup.add(headBelly);
 
         headGroup.position.set(0.38, 0.12, 0);
         group.add(headGroup);
 
-        const eyeGeometry = new THREE.SphereGeometry(0.035, 8, 8);
-        const pupilGeometry = new THREE.SphereGeometry(0.016, 6, 6);
+        const eyeGeometry = new THREE.SphereGeometry(0.04, 8, 8);
+        const pupilGeometry = new THREE.SphereGeometry(0.018, 6, 6);
         pupilGeometry.scale(1, 1, 0.35); // flatten pupil
 
         const leftEyeMaterial = new THREE.MeshStandardMaterial({
@@ -183,21 +183,42 @@ export class NewtManager {
 
         const leftEye = new THREE.Mesh(eyeGeometry, leftEyeMaterial);
         const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        leftPupil.position.set(0, 0, 0.031); // position at the front of the iris
+        leftPupil.position.set(0, 0, 0.036); // position at the front of the iris
         leftEye.add(leftPupil);
         leftEye.position.set(0.42, 0.16, 0.1);
-        leftEye.rotation.y = Math.PI / 8;
+        leftEye.rotation.y = Math.PI / 6;
+        leftEye.rotation.x = -Math.PI / 12;
         group.add(leftEye);
 
         const rightEye = new THREE.Mesh(eyeGeometry, rightEyeMaterial);
         const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        rightPupil.position.set(0, 0, 0.031);
+        rightPupil.position.set(0, 0, 0.036);
         rightEye.add(rightPupil);
         rightEye.position.set(0.42, 0.16, -0.1);
-        rightEye.rotation.y = -Math.PI / 8;
+        rightEye.rotation.y = -Math.PI / 6;
+        rightEye.rotation.x = -Math.PI / 12;
         group.add(rightEye);
 
+        const eyelidGeometry = new THREE.SphereGeometry(0.042, 8, 8);
+        eyelidGeometry.scale(1, 0.4, 1.15); // flatten/extend it to cover the lower eye
+        
+        const leftEyelidMaterial = new THREE.MeshStandardMaterial({
+            color: 0xFFAA00,
+            roughness: 0.7,
+            metalness: 0.05
+        });
+        const rightEyelidMaterial = leftEyelidMaterial.clone();
+
+        const leftEyelid = new THREE.Mesh(eyelidGeometry, leftEyelidMaterial);
+        leftEyelid.position.set(0.42, 0.125, 0.165);
+        group.add(leftEyelid);
+
+        const rightEyelid = new THREE.Mesh(eyelidGeometry, rightEyelidMaterial);
+        rightEyelid.position.set(0.42, 0.125, -0.165);
+        group.add(rightEyelid);
+
         group.userData.eyes = { left: leftEye, right: rightEye };
+        group.userData.eyelids = { left: leftEyelid, right: rightEyelid };
 
         const tailGeometry = new THREE.ConeGeometry(0.12, 0.65, detail);
         const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
@@ -282,7 +303,12 @@ export class NewtManager {
 
         const isBonus = !!mesh.userData.isBonus;
         const eyes = mesh.userData.eyes;
+        const eyelids = mesh.userData.eyelids;
         if (eyes) {
+            const zPos = isBonus ? 0.138 : 0.175;
+            eyes.left.position.z = zPos;
+            eyes.right.position.z = -zPos;
+
             const eyeColor = isBonus ? 0x0F0C0B : 0xFFAA00;
             eyes.left.material.color.setHex(eyeColor);
             eyes.left.material.emissive.setHex(0x000000);
@@ -292,13 +318,27 @@ export class NewtManager {
             eyes.right.material.emissiveIntensity = 0;
         }
 
+        if (eyelids) {
+            if (isBonus) {
+                eyelids.left.position.z = 0.135;
+                eyelids.right.position.z = -0.135;
+                eyelids.left.material.color.setHex(0x16181A);
+                eyelids.right.material.color.setHex(0x16181A);
+            } else {
+                eyelids.left.position.z = 0.165;
+                eyelids.right.position.z = -0.165;
+                eyelids.left.material.color.setHex(0xFFAA00);
+                eyelids.right.material.color.setHex(0xFFAA00);
+            }
+        }
+
         if (isBonus) {
-            mesh.userData.bodyMaterial.color.setHex(0x151210);
-            mesh.userData.bellyMaterial.color.setHex(0xFF2400);
+            mesh.userData.bodyMaterial.color.setHex(0x16181A);
+            mesh.userData.bellyMaterial.color.setHex(0xFF3300);
             mesh.userData.bodyMaterial.emissive.setHex(0x220000);
             mesh.userData.bellyMaterial.emissive.setHex(0x220000);
         } else {
-            mesh.userData.bodyMaterial.color.setHex(0x5C2B15);
+            mesh.userData.bodyMaterial.color.setHex(0x643216);
             mesh.userData.bellyMaterial.color.setHex(0xFFAA00);
             mesh.userData.bodyMaterial.emissive.setHex(0x000000);
             mesh.userData.bellyMaterial.emissive.setHex(0x000000);

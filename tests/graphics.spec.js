@@ -183,35 +183,46 @@ test.describe('Graphics and flashlight enhancements', () => {
             // Pass true to force illumination check
             manager.update(0.016, 0.016, new THREE.Vector3(0, 0, 0));
 
+            const caliEyelids = californiaNewt.userData.eyelids;
+            const rbEyelids = redBelliedNewt.userData.eyelids;
+
             return {
                 caliBodyColor: '#' + californiaNewt.userData.bodyMaterial.color.getHexString(),
                 caliBellyColor: '#' + californiaNewt.userData.bellyMaterial.color.getHexString(),
                 caliEyeColor: '#' + caliEyes.left.material.color.getHexString(),
                 hasCaliBump: !!californiaNewt.userData.bodyMaterial.bumpMap,
                 hasCaliPupil,
+                caliEyelidColor: '#' + caliEyelids.left.material.color.getHexString(),
+                caliEyelidZ: caliEyelids.left.position.z,
 
                 rbBodyColor: '#' + redBelliedNewt.userData.bodyMaterial.color.getHexString(),
                 rbBellyColor: '#' + redBelliedNewt.userData.bellyMaterial.color.getHexString(),
                 rbEyeColor: '#' + rbEyes.left.material.color.getHexString(),
                 hasRbBump: !!redBelliedNewt.userData.bodyMaterial.bumpMap,
                 hasRbPupil,
+                rbEyelidColor: '#' + rbEyelids.left.material.color.getHexString(),
+                rbEyelidZ: rbEyelids.left.position.z,
 
                 caliEmissiveHex: '#' + caliEyes.left.material.emissive.getHexString(),
                 rbEmissiveHex: '#' + rbEyes.left.material.emissive.getHexString()
             };
         });
 
-        expect(config.caliBodyColor.toLowerCase()).toBe('#5c2b15');
+        expect(config.caliBodyColor.toLowerCase()).toBe('#643216');
         expect(config.caliBellyColor.toLowerCase()).toBe('#ffaa00');
         expect(config.caliEyeColor.toLowerCase()).toBe('#ddaa20');
         expect(config.hasCaliBump).toBeTruthy();
         expect(config.hasCaliPupil).toBeTruthy();
+        expect(config.caliEyelidColor.toLowerCase()).toBe('#ffaa00');
+        expect(config.caliEyelidZ).toBeCloseTo(0.165, 3);
 
-        expect(config.rbBodyColor.toLowerCase()).toBe('#151210');
-        expect(config.rbBellyColor.toLowerCase()).toBe('#ff2400');
+        expect(config.rbBodyColor.toLowerCase()).toBe('#16181a');
+        expect(config.rbBellyColor.toLowerCase()).toBe('#ff3300');
         expect(config.rbEyeColor.toLowerCase()).toBe('#0f0c0b');
         expect(config.hasRbBump).toBeTruthy();
         expect(config.hasRbPupil).toBeTruthy();
+        expect(config.rbEyelidColor.toLowerCase()).toBe('#16181a');
+        expect(config.rbEyelidZ).toBeCloseTo(0.135, 3);
 
         // California eyes should be glowing/emissive
         expect(config.caliEmissiveHex.toLowerCase()).toBe('#ffcc00');
