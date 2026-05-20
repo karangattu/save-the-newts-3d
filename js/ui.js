@@ -179,7 +179,7 @@ export class UIManager {
         videoScreen.innerHTML = `
             <div class="video-container">
                 <video id="game-intro-video" playsinline preload="metadata">
-                    <source src="assets/game_start_video.mp4" type="video/mp4">
+                    <source src="assets/intro_video.mp4" type="video/mp4">
                 </video>
                 <button id="skip-video-btn" class="skip-button">
                     <i class="fas fa-forward"></i> Skip
