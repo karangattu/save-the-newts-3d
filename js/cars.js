@@ -43,6 +43,9 @@ export class CarManager {
         // Shared materials to reduce draw calls
         this.sharedMaterials = this.createSharedMaterials();
 
+        this.qualityLevel = this.isLowEnd ? 1 : 3;
+        this.maxCars = this.isLowEnd ? 7 : 14;
+
         // Car object pool
         this.carPool = new Map();
         this.initPool();
@@ -50,9 +53,63 @@ export class CarManager {
         this._tmpNormal = new THREE.Vector3();
         this._tmpLaneOffset = new THREE.Vector3();
         this._tmpTargetPos = new THREE.Vector3();
+        this._tmpCurvePoint = new THREE.Vector3();
+        this._tmpTangent = new THREE.Vector3();
 
-        this.qualityLevel = this.isLowEnd ? 1 : 3;
-        this.maxCars = this.isLowEnd ? 7 : 14;
+        // Scratch collision boxes (avoid per-frame allocations)
+        this._carBox = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+        this._carBox2 = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+        this._newtBox = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+
+        // Cached curve length (getLength() is expensive — do not call per frame)
+        this._curveLength = roadCurve ? roadCurve.getLength() : 0;
+
+        // Shared glow texture + points cloud for head/taillight halos
+        this._glowTexture = this.createGlowTexture();
+        this.lightGlows = null;
+        this.lightGlowPositions = null;
+        this.initLightGlows();
+    }
+
+    createGlowTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 64, 64);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+    }
+
+    // One Points cloud for every vehicle light halo => 2 extra draw calls total
+    // instead of per-car sprites.
+    initLightGlows() {
+        const maxPoints = 32 * 2; // generous capacity, draw range trims it
+        this.lightGlowPositions = new Float32Array(maxPoints * 3);
+        const colors = new Float32Array(maxPoints * 3);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(this.lightGlowPositions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const material = new THREE.PointsMaterial({
+            size: 1.6,
+            map: this._glowTexture,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true
+        });
+        this.lightGlows = new THREE.Points(geometry, material);
+        this.lightGlows.frustumCulled = false;
+        this.lightGlows.geometry.setDrawRange(0, 0);
+        this.scene.add(this.lightGlows);
     }
 
     createSharedMaterials() {
@@ -88,6 +145,7 @@ export class CarManager {
 
     setRoadCurve(roadCurve) {
         this.roadCurve = roadCurve;
+        this._curveLength = roadCurve ? roadCurve.getLength() : 0;
     }
 
     setDifficultyMultiplier(mult) {
@@ -103,6 +161,19 @@ export class CarManager {
             this.maxCars = this.isLowEnd ? 8 : 11;
         } else {
             this.maxCars = this.isLowEnd ? 9 : 14;
+        }
+
+        const showDynamicHeadlights = this.enableDynamicLights && this.qualityLevel >= 2;
+        if (this.carPool) {
+            this.carPool.forEach(pool => {
+                pool.meshes.forEach(mesh => {
+                    mesh.traverse(child => {
+                        if (child.userData.carHeadlight) {
+                            child.visible = showDynamicHeadlights;
+                        }
+                    });
+                });
+            });
         }
     }
 
@@ -870,11 +941,14 @@ export class CarManager {
             headlight.position.set(0, 0.72, 1.22);
             group.add(headlight);
 
-            const light = new THREE.SpotLight(0xffffee, 1.5, 25, 0.4, 0.5);
-            light.position.set(0, 0.72, 1.22);
-            light.target.position.set(0, 0, 15);
-            group.add(light);
-            group.add(light.target);
+            if (this.enableDynamicLights && this.qualityLevel >= 2) {
+                const light = new THREE.SpotLight(0xffffee, 1.5, 25, 0.4, 0.5);
+                light.position.set(0, 0.72, 1.22);
+                light.target.position.set(0, 0, 15);
+                light.userData.carHeadlight = true;
+                group.add(light);
+                group.add(light.target);
+            }
         }
 
         // Taillight
@@ -963,6 +1037,7 @@ export class CarManager {
             light.position.set(0, yPos, zPos);
             light.target.position.set(0, 0, zPos + 20);
             light.castShadow = false;
+            light.userData.carHeadlight = true;
             group.add(light);
             group.add(light.target);
         }
@@ -1071,8 +1146,8 @@ export class CarManager {
             const car = this.cars[i];
 
             if (this.roadCurve) {
-                // Move along the curved road
-                const curveLength = this.roadCurve.getLength();
+                // Move along the curved road (cached length — getLength() is costly)
+                const curveLength = this._curveLength || (this._curveLength = this.roadCurve.getLength());
                 const moveDistance = car.speed * deltaTime;
                 const tDelta = moveDistance / curveLength;
 
@@ -1086,9 +1161,9 @@ export class CarManager {
                     continue;
                 }
 
-                // Get new position on curve
-                const curvePoint = this.roadCurve.getPoint(car.curveT);
-                const tangent = this.roadCurve.getTangent(car.curveT);
+                // Get new position on curve (scratch vectors, no allocation)
+                const curvePoint = this.roadCurve.getPoint(car.curveT, this._tmpCurvePoint);
+                const tangent = this.roadCurve.getTangent(car.curveT, this._tmpTangent);
 
                 // Calculate lane offset
                 this._tmpNormal.set(-tangent.z, 0, tangent.x).normalize();
@@ -1118,40 +1193,58 @@ export class CarManager {
                 }
             }
         }
+
+        this.updateLightGlows();
+    }
+
+    // Position the shared glow points at each active car's head/taillights.
+    updateLightGlows() {
+        if (!this.lightGlows) return;
+
+        const positions = this.lightGlowPositions;
+        const colors = this.lightGlows.geometry.attributes.color.array;
+        const maxPoints = positions.length / 3;
+        let idx = 0;
+
+        for (let i = 0; i < this.cars.length && idx + 2 <= maxPoints; i++) {
+            const car = this.cars[i];
+            if (car.isStealth) continue;
+
+            const mesh = car.mesh;
+            const isSemi = car.vehicleType === VEHICLE_TYPES.SEMI;
+            const isMoto = car.vehicleType === VEHICLE_TYPES.MOTORCYCLE;
+            const frontZ = isSemi ? 4.3 : (isMoto ? 1.2 : 2.3);
+            const backZ = isSemi ? -6.5 : (isMoto ? -0.95 : -2.3);
+            const y = isSemi ? 0.9 : 0.7;
+
+            // Headlight halo (warm white) — at the car's local front
+            positions[idx * 3] = mesh.position.x + Math.sin(mesh.rotation.y) * frontZ;
+            positions[idx * 3 + 1] = y;
+            positions[idx * 3 + 2] = mesh.position.z + Math.cos(mesh.rotation.y) * frontZ;
+            colors[idx * 3] = 1.0;
+            colors[idx * 3 + 1] = 0.93;
+            colors[idx * 3 + 2] = 0.75;
+            idx++;
+
+            // Taillight halo (red) — at the car's local rear
+            positions[idx * 3] = mesh.position.x + Math.sin(mesh.rotation.y) * backZ;
+            positions[idx * 3 + 1] = y;
+            positions[idx * 3 + 2] = mesh.position.z + Math.cos(mesh.rotation.y) * backZ;
+            colors[idx * 3] = 1.0;
+            colors[idx * 3 + 1] = 0.12;
+            colors[idx * 3 + 2] = 0.08;
+            idx++;
+        }
+
+        this.lightGlows.geometry.setDrawRange(0, idx);
+        this.lightGlows.geometry.attributes.position.needsUpdate = true;
+        this.lightGlows.geometry.attributes.color.needsUpdate = true;
     }
 
     // ─── COLLISION DETECTION ───────────────────────────────────────
 
-    checkCollision(playerBox) {
-        for (const car of this.cars) {
-            const carBox = this.getCarBoundingBox(car);
-
-            if (this.boxesIntersect(playerBox, carBox)) {
-                return { collision: true, isStealth: car.isStealth };
-            }
-        }
-        return { collision: false };
-    }
-
-    checkNearMiss(playerNearMissBox, playerCollisionBox) {
-        if (this.lastNearMiss < this.nearMissCooldown) return null;
-
-        for (const car of this.cars) {
-            if (car.hasTriggeredNearMiss) continue;
-
-            const carBox = this.getCarBoundingBox(car);
-
-            if (this.boxesIntersect(playerNearMissBox, carBox) &&
-                !this.boxesIntersect(playerCollisionBox, carBox)) {
-                car.hasTriggeredNearMiss = true;
-                this.lastNearMiss = 0;
-                return { nearMiss: true, isStealth: car.isStealth };
-            }
-        }
-        return null;
-    }
-
-    getCarBoundingBox(car) {
+    // Writes a car's bounds into `out` (no allocation in hot loops).
+    fillCarBox(car, out) {
         const pos = car.mesh.position;
 
         let halfWidth = 1;
@@ -1171,12 +1264,51 @@ export class CarManager {
             halfLength = 2.1;
         }
 
-        return {
-            minX: pos.x - halfWidth,
-            maxX: pos.x + halfWidth,
-            minZ: pos.z - halfLength,
-            maxZ: pos.z + halfLength
-        };
+        out.minX = pos.x - halfWidth;
+        out.maxX = pos.x + halfWidth;
+        out.minZ = pos.z - halfLength;
+        out.maxZ = pos.z + halfLength;
+        return out;
+    }
+
+    _scratchCarBox() {
+        if (!this._carBox) this._carBox = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+        return this._carBox;
+    }
+
+    checkCollision(playerBox) {
+        const carBox = this._scratchCarBox();
+        for (const car of this.cars) {
+            if (this.boxesIntersect(playerBox, this.fillCarBox(car, carBox))) {
+                return { collision: true, isStealth: car.isStealth };
+            }
+        }
+        return { collision: false };
+    }
+
+    checkNearMiss(playerNearMissBox, playerCollisionBox) {
+        if (this.lastNearMiss < this.nearMissCooldown) return null;
+
+        const carBox = this._scratchCarBox();
+        for (const car of this.cars) {
+            if (car.hasTriggeredNearMiss) continue;
+
+            this.fillCarBox(car, carBox);
+
+            if (this.boxesIntersect(playerNearMissBox, carBox) &&
+                !this.boxesIntersect(playerCollisionBox, carBox)) {
+                car.hasTriggeredNearMiss = true;
+                this.lastNearMiss = 0;
+                return { nearMiss: true, isStealth: car.isStealth };
+            }
+        }
+        return null;
+    }
+
+    getCarBoundingBox(car) {
+        return this.fillCarBox(car, {
+            minX: 0, maxX: 0, minZ: 0, maxZ: 0
+        });
     }
 
     boxesIntersect(box1, box2) {
@@ -1190,18 +1322,18 @@ export class CarManager {
 
     checkNewtCollisions(newts) {
         const crushedNewts = [];
+        const carBox = this._carBox;
+        const newtBox = this._newtBox;
 
         for (const car of this.cars) {
-            const carBox = this.getCarBoundingBox(car);
+            this.fillCarBox(car, carBox);
 
             for (const newt of newts) {
                 const newtPos = newt.mesh.position;
-                const newtBox = {
-                    minX: newtPos.x - 0.3,
-                    maxX: newtPos.x + 0.3,
-                    minZ: newtPos.z - 0.3,
-                    maxZ: newtPos.z + 0.3
-                };
+                newtBox.minX = newtPos.x - 0.3;
+                newtBox.maxX = newtPos.x + 0.3;
+                newtBox.minZ = newtPos.z - 0.3;
+                newtBox.maxZ = newtPos.z + 0.3;
 
                 if (this.boxesIntersect(carBox, newtBox)) {
                     crushedNewts.push(newt);
@@ -1219,5 +1351,8 @@ export class CarManager {
         this.cars = [];
         this.spawnTimer = 0;
         this.lastNearMiss = 0;
+        if (this.lightGlows) {
+            this.lightGlows.geometry.setDrawRange(0, 0);
+        }
     }
 }

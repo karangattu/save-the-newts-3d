@@ -4,12 +4,15 @@
   "private": true,
   "scripts": {
     "test": "npx playwright test --project=chromium --reporter=list",
+    "test:unit": "vitest run tests/unit",
     "test:headed": "npx playwright test --project=chromium --headed",
     "start": "npx http-server -p 3000 -c-1"
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",
     "http-server": "^14.1.1",
+    "three": "^0.185.1",
+    "vitest": "^4.1.10",
     "wait-on": "^7.0.1"
   }
 }

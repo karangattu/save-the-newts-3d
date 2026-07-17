@@ -2,6 +2,7 @@
 // All 3 levels share the same Alma Bridge Road curve (Lexington Reservoir area)
 // Level 1: Clear night  |  Level 2: Just after sunset  |  Level 3: Rain & wind storm
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export class LevelManager {
     constructor(scene, camera, renderer, isMobile = false) {
@@ -10,27 +11,72 @@ export class LevelManager {
         this.renderer = renderer;
         this.isMobile = isMobile;
         this.currentLevel = 1;
-        
+
         this.levelObjects = [];
         this.roadCurve = null;
         this.dangerZones = null;
         this.roadBounds = null;
-        
+
+        // Quality scaling (1 = low, 2 = medium, 3 = high)
+        this.qualityLevel = isMobile ? 1 : 3;
+        this.rainUpdateInterval = 3;
+        this.rainActiveFraction = 1;
+        this.rainFrameCounter = 0;
+        this.setQualityLevel(this.qualityLevel);
+
         // Rain system
         this.rain = null;
         this.rainGeometry = null;
         this.rainVelocities = null;
-        
+
         // Wind for level 3
         this.windStrength = 0;
         this.windDirection = new THREE.Vector3(1, 0, 0.3);
         this.windTime = 0;
-        
+
         this.splashParticles = [];
         this.puddlePositions = [];
 
         // Moths (SF-realistic, not fireflies)
         this.moths = [];
+
+        // Textures created for the active level (disposed on clear)
+        this._levelTextures = [];
+
+        // Scratch objects to avoid per-frame allocations
+        this._scratchMatrix = new THREE.Matrix4();
+        this._scratchQuat = new THREE.Quaternion();
+        this._scratchEuler = new THREE.Euler();
+        this._scratchPos = new THREE.Vector3();
+        this._scratchScale = new THREE.Vector3();
+    }
+
+    setQualityLevel(level) {
+        this.qualityLevel = Math.max(1, Math.min(3, level | 0));
+
+        if (this.qualityLevel <= 1) {
+            this.rainUpdateInterval = 5;
+            this.rainActiveFraction = 0.45;
+        } else if (this.qualityLevel === 2) {
+            this.rainUpdateInterval = 4;
+            this.rainActiveFraction = 0.7;
+        } else {
+            this.rainUpdateInterval = 3;
+            this.rainActiveFraction = 1;
+        }
+
+        this.applyRainQuality();
+    }
+
+    getScaledCount(count) {
+        const scale = this.qualityLevel <= 1 ? 0.5 : (this.qualityLevel === 2 ? 0.7 : 1);
+        return Math.max(1, Math.round(count * scale));
+    }
+
+    applyRainQuality() {
+        if (!this.rainGeometry) return;
+        const count = this.rainGeometry.attributes.position.count;
+        this.rainGeometry.setDrawRange(0, Math.floor(count * this.rainActiveFraction));
     }
     
     loadLevel(levelNum) {
@@ -65,6 +111,9 @@ export class LevelManager {
             this.scene.remove(obj);
         });
         this.levelObjects = [];
+
+        this._levelTextures.forEach(tex => tex.dispose());
+        this._levelTextures = [];
         
         if (this.rain) {
             this.scene.remove(this.rain);
@@ -74,6 +123,10 @@ export class LevelManager {
         this.splashParticles.forEach(splash => this.scene.remove(splash));
         this.splashParticles = [];
         this.moths = [];
+        this.mothBodies = null;
+        this.mothLeftWings = null;
+        this.mothRightWings = null;
+        this._stormWater = null;
         this.windStrength = 0;
     }
     
@@ -131,6 +184,143 @@ export class LevelManager {
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         return geometry;
+    }
+
+    // ==================== PROCEDURAL TEXTURES ====================
+    // Asphalt with baked edge lines + center dashes. One canvas tile covers 15m
+    // of road (texture repeats along its length), so paint one dash per tile.
+    createAsphaltTexture(wetness = 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Base asphalt
+        const base = wetness > 0 ? 18 : 26;
+        ctx.fillStyle = `rgb(${base},${base},${base + 2})`;
+        ctx.fillRect(0, 0, 256, 512);
+
+        // Aggregate speckle
+        for (let i = 0; i < 2600; i++) {
+            const g = base + (Math.random() * 28 - 10);
+            ctx.fillStyle = `rgba(${g | 0},${g | 0},${(g + 3) | 0},${0.35 + Math.random() * 0.4})`;
+            ctx.fillRect(Math.random() * 256, Math.random() * 512, 1.5, 1.5);
+        }
+
+        // Darker tire-polished wheel tracks (lanes at ±3m, wheels ~±0.8m apart)
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        [[0.155, 0.075], [0.27, 0.075], [0.655, 0.075], [0.77, 0.075]].forEach(([u, w]) => {
+            ctx.fillRect(u * 256, 0, w * 256, 512);
+        });
+
+        // Occasional cracks / tar snakes
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            let x = Math.random() * 256;
+            ctx.moveTo(x, Math.random() * 512);
+            for (let s = 0; s < 6; s++) {
+                x += (Math.random() - 0.5) * 30;
+                ctx.lineTo(x, Math.random() * 512);
+            }
+            ctx.stroke();
+        }
+
+        // White edge lines (0.5m in from each 6m edge => u = 0.5/12)
+        const edgeU = (0.5 / 12) * 256;
+        const lineW = Math.max(2, (0.15 / 12) * 256);
+        ctx.fillStyle = wetness > 0 ? 'rgba(220,220,215,0.85)' : 'rgba(235,235,230,0.95)';
+        ctx.fillRect(edgeU - lineW / 2, 0, lineW, 512);
+        ctx.fillRect(256 - edgeU - lineW / 2, 0, lineW, 512);
+
+        // Yellow center dash: 7.5m dash inside the 15m tile
+        const dashW = Math.max(2.5, (0.15 / 12) * 256);
+        ctx.fillStyle = wetness > 0 ? 'rgba(200,160,30,0.8)' : 'rgba(255,204,0,0.92)';
+        ctx.fillRect(128 - dashW / 2, 0, dashW, 256);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(1, 20); // 300m road / 15m tile
+        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this._levelTextures.push(texture);
+        return texture;
+    }
+
+    createGrassTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#0a160a';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Mottled patches
+        for (let i = 0; i < 900; i++) {
+            const g = 14 + Math.random() * 22;
+            ctx.fillStyle = `rgba(${(g * 0.5) | 0},${g | 0},${(g * 0.45) | 0},${0.25 + Math.random() * 0.5})`;
+            const r = 2 + Math.random() * 7;
+            ctx.beginPath();
+            ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Grass blade strokes
+        ctx.strokeStyle = 'rgba(30,52,26,0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 700; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + (Math.random() - 0.5) * 3, y - 2 - Math.random() * 4);
+            ctx.stroke();
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(8, 30);
+        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this._levelTextures.push(texture);
+        return texture;
+    }
+
+    createRockTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#3d3a38';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Layered sediment bands
+        for (let y = 0; y < 256; y += 8 + Math.random() * 18) {
+            const g = 45 + Math.random() * 30;
+            ctx.fillStyle = `rgba(${g | 0},${(g * 0.95) | 0},${(g * 0.88) | 0},0.6)`;
+            ctx.fillRect(0, y, 256, 4 + Math.random() * 10);
+        }
+
+        // Noise + vertical striations
+        for (let i = 0; i < 1200; i++) {
+            const g = 35 + Math.random() * 45;
+            ctx.fillStyle = `rgba(${g | 0},${g | 0},${g | 0},${0.2 + Math.random() * 0.35})`;
+            ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2 + Math.random() * 8);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(12, 2);
+        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this._levelTextures.push(texture);
+        return texture;
     }
 
     // ==================== ROAD SIGNS ====================
@@ -281,6 +471,9 @@ export class LevelManager {
         if (!this.roadCurve) return;
         const roadWidth = 12;
 
+        // Track sign groups so they can be merged into a handful of draw calls
+        const signStart = this.levelObjects.length;
+
         // Newt crossing signs along road
         for (let i = 0; i < 6; i++) {
             const t = 0.1 + (i * 0.15);
@@ -313,6 +506,54 @@ export class LevelManager {
         for (let z = -120; z <= 120; z += 40) {
             this.createWarningSign(20, z);
         }
+
+        this.mergeStaticObjects(this.levelObjects.splice(signStart));
+    }
+
+    // Merge a set of static groups/meshes into one mesh per material, removing
+    // ~90 draw calls worth of road signs down to a small handful.
+    mergeStaticObjects(objects) {
+        const buckets = new Map(); // materialKey -> { material, geometries }
+        const originalGeometries = new Set();
+        const originalMaterials = new Set();
+
+        objects.forEach(obj => {
+            obj.updateMatrixWorld(true);
+            obj.traverse(child => {
+                if (!child.isMesh) return;
+                const mat = child.material;
+                const key = [
+                    mat.color.getHex(), mat.emissive ? mat.emissive.getHex() : 0,
+                    mat.emissiveIntensity || 0, mat.roughness, mat.metalness,
+                    mat.side, !!mat.transparent, mat.opacity
+                ].join('|');
+
+                originalGeometries.add(child.geometry);
+                originalMaterials.add(mat);
+                const geo = child.geometry.clone().applyMatrix4(child.matrixWorld);
+                if (!buckets.has(key)) buckets.set(key, { material: mat, geometries: [] });
+                buckets.get(key).geometries.push(geo);
+            });
+            this.scene.remove(obj);
+        });
+
+        originalGeometries.forEach(g => g.dispose());
+
+        const usedMaterials = new Set();
+        buckets.forEach(({ material, geometries }) => {
+            const merged = mergeGeometries(geometries, false);
+            geometries.forEach(g => g.dispose());
+            if (!merged) return;
+            usedMaterials.add(material);
+            const mesh = new THREE.Mesh(merged, material);
+            this.scene.add(mesh);
+            this.levelObjects.push(mesh);
+        });
+
+        // Dispose duplicate material instances not used by merged meshes
+        originalMaterials.forEach(m => {
+            if (!usedMaterials.has(m)) m.dispose();
+        });
     }
     
     // ==================== SHARED ROAD CREATION ====================
@@ -320,23 +561,24 @@ export class LevelManager {
         const roadWidth = 12;
         this.createAlmaBridgeRoadCurve();
         this.precomputeRoadData();
-        
+
         const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 250);
         const roadMaterial = new THREE.MeshStandardMaterial({
-            color: wetness > 0 ? 0x1a1a1a : 0x2a2a2a,
-            roughness: wetness > 0 ? 0.2 : 0.4,
-            metalness: wetness > 0 ? 0.4 : 0.2,
+            map: this.createAsphaltTexture(wetness),
+            roughness: wetness > 0 ? 0.25 : 0.55,
+            metalness: wetness > 0 ? 0.35 : 0.05,
             side: THREE.DoubleSide
         });
-        
+
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.position.y = 0.01;
         road.receiveShadow = !this.isMobile;
         this.scene.add(road);
         this.levelObjects.push(road);
-        
-        this.createRoadMarkings(roadWidth);
-        
+
+        this.createRoadReflectors(roadWidth);
+        this.createDelineatorPosts(roadWidth);
+
         const roadLength = 300;
         this.roadBounds = {
             minX: -40,
@@ -346,48 +588,105 @@ export class LevelManager {
         };
         this.dangerZones = { forest: -12, cliff: 14 };
     }
-    
-    createRoadMarkings(roadWidth) {
-        const edgeLinePoints = [];
-        const steps = 120;
-        
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const point = this.roadCurve.getPoint(t);
-            const tangent = this.roadCurve.getTangent(t);
-            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-            edgeLinePoints.push(point.clone().add(normal.clone().multiplyScalar(-roadWidth / 2 + 0.5)));
-            edgeLinePoints.push(point.clone().add(normal.clone().multiplyScalar(roadWidth / 2 - 0.5)));
+
+    // Raised pavement markers ("Botts' dots") along both edge lines — they catch
+    // the flashlight/headlights and make the night road readable. One instanced
+    // mesh for the whole road => a single draw call.
+    createRoadReflectors(roadWidth) {
+        const spacing = 0.025; // ~7.5m along the curve
+        const count = Math.floor(1 / spacing) * 2;
+        const geo = new THREE.BoxGeometry(0.1, 0.025, 0.1);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xbbbbbb,
+            roughness: 0.15,
+            metalness: 0.9,
+            emissive: 0x2a2a22,
+            emissiveIntensity: 0.6
+        });
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        mesh.receiveShadow = false;
+
+        const matrix = this._scratchMatrix;
+        const quat = this._scratchQuat.identity();
+        const scale = this._scratchScale.set(1, 1, 1);
+        const pos = this._scratchPos;
+
+        let idx = 0;
+        for (let side = -1; side <= 1 && idx < count; side += 2) {
+            for (let i = 0; i < count / 2 && idx < count; i++) {
+                const t = i * spacing;
+                if (t > 1) break;
+                const data = this.getRoadDataAtT(t);
+                pos.copy(data.point).addScaledVector(data.normal, side * (roadWidth / 2 - 0.9));
+                pos.y = 0.02;
+                matrix.compose(pos, quat, scale);
+                mesh.setMatrixAt(idx++, matrix);
+            }
         }
-        
-        const leftEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 0));
-        const rightEdgeCurve = new THREE.CatmullRomCurve3(edgeLinePoints.filter((_, i) => i % 2 === 1));
-        const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-        
-        const leftLine = new THREE.Mesh(new THREE.TubeGeometry(leftEdgeCurve, 120, 0.08, 4, false), lineMaterial);
-        leftLine.position.y = 0.02;
-        this.scene.add(leftLine);
-        this.levelObjects.push(leftLine);
-        
-        const rightLine = new THREE.Mesh(new THREE.TubeGeometry(rightEdgeCurve, 120, 0.08, 4, false), lineMaterial);
-        rightLine.position.y = 0.02;
-        this.scene.add(rightLine);
-        this.levelObjects.push(rightLine);
-        
-        const dashMaterial = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5 });
-        for (let i = 0; i < 120; i += 6) {
-            const t = i / 120;
-            const t2 = Math.min((i + 3) / 120, 1);
-            const point1 = this.roadCurve.getPoint(t);
-            const point2 = this.roadCurve.getPoint(t2);
-            const dashLength = point1.distanceTo(point2);
-            const dash = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.02, dashLength), dashMaterial);
-            dash.position.copy(point1.clone().add(point2).multiplyScalar(0.5));
-            dash.position.y = 0.02;
-            dash.lookAt(point2);
-            this.scene.add(dash);
-            this.levelObjects.push(dash);
+        mesh.count = idx;
+        mesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(mesh);
+        this.levelObjects.push(mesh);
+    }
+
+    // White delineator posts with amber reflectors along the cliff edge — the
+    // classic mountain-road cue, and a strong depth cue at night.
+    createDelineatorPosts(roadWidth) {
+        const spacing = 0.04; // ~12m
+        const count = Math.floor(1 / spacing);
+
+        const postGeo = new THREE.BoxGeometry(0.09, 1.0, 0.09);
+        postGeo.translate(0, 0.5, 0);
+        const postMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.2 });
+        const posts = new THREE.InstancedMesh(postGeo, postMat, count);
+
+        const capGeo = new THREE.BoxGeometry(0.11, 0.14, 0.04);
+        capGeo.translate(0, 0.88, 0);
+        const capMat = new THREE.MeshStandardMaterial({
+            color: 0xcc8833,
+            emissive: 0xcc7722,
+            emissiveIntensity: 0.55,
+            roughness: 0.2,
+            metalness: 0.6
+        });
+        const caps = new THREE.InstancedMesh(capGeo, capMat, count);
+
+        const matrix = this._scratchMatrix;
+        const quat = this._scratchQuat;
+        const euler = this._scratchEuler;
+        const scale = this._scratchScale.set(1, 1, 1);
+        const pos = this._scratchPos;
+
+        let idx = 0;
+        for (let i = 0; i < count; i++) {
+            const t = 0.02 + i * spacing;
+            if (t > 0.98) break;
+            const data = this.getRoadDataAtT(t);
+            pos.copy(data.point).addScaledVector(data.normal, roadWidth / 2 + 1.2);
+            pos.y = 0;
+            euler.set(0, Math.atan2(data.tangent.x, data.tangent.z), 0);
+            quat.setFromEuler(euler);
+            matrix.compose(pos, quat, scale);
+            posts.setMatrixAt(idx, matrix);
+            caps.setMatrixAt(idx, matrix);
+            idx++;
         }
+        posts.count = idx;
+        caps.count = idx;
+        posts.instanceMatrix.needsUpdate = true;
+        caps.instanceMatrix.needsUpdate = true;
+        this.scene.add(posts, caps);
+        this.levelObjects.push(posts, caps);
+    }
+
+    // O(1) lookup by curve parameter using the precomputed road table.
+    getRoadDataAtT(t) {
+        const data = this.precomputedRoadData;
+        if (!data || data.length === 0) {
+            return this.getRoadDataAtZ(0);
+        }
+        const idx = Math.max(0, Math.min(data.length - 1, Math.round(t * (data.length - 1))));
+        return data[idx];
     }
     
     // ==================== SHARED ENVIRONMENT ====================
@@ -395,13 +694,13 @@ export class LevelManager {
         const cliffLength = 300;
         const cliffFace = new THREE.Mesh(
             new THREE.PlaneGeometry(cliffLength, 30),
-            new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 1.0 })
+            new THREE.MeshStandardMaterial({ map: this.createRockTexture(), roughness: 1.0 })
         );
         cliffFace.rotation.y = -Math.PI / 2;
         cliffFace.position.set(28, -15, 0);
         this.scene.add(cliffFace);
         this.levelObjects.push(cliffFace);
-        
+
         const water = new THREE.Mesh(
             new THREE.PlaneGeometry(100, 300),
             new THREE.MeshStandardMaterial({ color: 0x1a3d5c, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.9 })
@@ -411,37 +710,43 @@ export class LevelManager {
         this.scene.add(water);
         this.levelObjects.push(water);
     }
-    
+
     createGrass(color = 0x0a1a0a) {
         const grassGeo = new THREE.PlaneGeometry(80, 300);
-        const grassMat = new THREE.MeshStandardMaterial({ color: color, roughness: 1.0 });
-        
+        const grassMat = new THREE.MeshStandardMaterial({
+            map: this.createGrassTexture(),
+            color: color,
+            roughness: 1.0
+        });
+
         const leftGrass = new THREE.Mesh(grassGeo, grassMat);
         leftGrass.rotation.x = -Math.PI / 2;
         leftGrass.position.set(-45, -0.01, 0);
         this.scene.add(leftGrass);
         this.levelObjects.push(leftGrass);
-        
+
         const rightGrass = new THREE.Mesh(grassGeo, grassMat);
         rightGrass.rotation.x = -Math.PI / 2;
         rightGrass.position.set(45, -0.01, 0);
         this.scene.add(rightGrass);
         this.levelObjects.push(rightGrass);
     }
-    
+
     createTrees(count, side) {
-        if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
         const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6);
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 });
         const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
         const foliageGeo = new THREE.ConeGeometry(1, 1, 8);
-        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a, roughness: 1 });
+        const foliageMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
         const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
+        const foliageTopMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
 
         const matrix = new THREE.Matrix4();
         const position = new THREE.Vector3();
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
+        const color = new THREE.Color();
 
         for (let i = 0; i < count; i++) {
             const x = side * (20 + Math.random() * 35);
@@ -456,78 +761,117 @@ export class LevelManager {
             matrix.compose(position, quaternion, scale);
             trunkMesh.setMatrixAt(i, matrix);
 
-            position.set(x, trunkH + (height * 0.35), z);
-            scale.set(radius, height * 0.7, radius);
+            // Lower canopy
+            position.set(x, trunkH + height * 0.3, z);
+            scale.set(radius, height * 0.55, radius);
             matrix.compose(position, quaternion, scale);
             foliageMesh.setMatrixAt(i, matrix);
+
+            // Upper canopy (narrower, sits above lower cone)
+            position.set(x, trunkH + height * 0.62, z);
+            scale.set(radius * 0.65, height * 0.45, radius * 0.65);
+            matrix.compose(position, quaternion, scale);
+            foliageTopMesh.setMatrixAt(i, matrix);
+
+            // Slight per-tree color variance (coastal redwood / douglas fir range)
+            const g = 0.55 + Math.random() * 0.7;
+            color.setRGB(0.04 * g, 0.10 * g, 0.045 * g);
+            foliageMesh.setColorAt(i, color);
+            color.multiplyScalar(1.15);
+            foliageTopMesh.setColorAt(i, color);
         }
         trunkMesh.instanceMatrix.needsUpdate = true;
         foliageMesh.instanceMatrix.needsUpdate = true;
-        this.scene.add(trunkMesh, foliageMesh);
-        this.levelObjects.push(trunkMesh, foliageMesh);
+        foliageTopMesh.instanceMatrix.needsUpdate = true;
+        if (foliageMesh.instanceColor) foliageMesh.instanceColor.needsUpdate = true;
+        if (foliageTopMesh.instanceColor) foliageTopMesh.instanceColor.needsUpdate = true;
+        this.scene.add(trunkMesh, foliageMesh, foliageTopMesh);
+        this.levelObjects.push(trunkMesh, foliageMesh, foliageTopMesh);
     }
 
+    // All ferns rendered as ONE instanced mesh (was ~200 separate meshes).
     createUnderbrush(count = 60) {
-        if (this.isMobile) count = Math.floor(count * 0.4);
+        count = this.getScaledCount(count);
+        const frondsPerFern = 4;
+        const total = count * frondsPerFern;
+
+        const frondGeo = new THREE.ConeGeometry(0.3, 1.2, 4);
+        frondGeo.translate(0, 0.5, 0); // pivot at frond base
+        const frondMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+        const mesh = new THREE.InstancedMesh(frondGeo, frondMat, total);
+
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const euler = new THREE.Euler();
+        const scale = new THREE.Vector3();
+        const color = new THREE.Color();
+
+        let idx = 0;
         for (let i = 0; i < count; i++) {
             const x = -(15 + Math.random() * 30);
             const z = (Math.random() - 0.5) * 260;
-            const fernGroup = new THREE.Group();
-            const fronds = 3 + Math.floor(Math.random() * 3);
-            for (let f = 0; f < fronds; f++) {
-                const frond = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.3, 1.2, 4),
-                    new THREE.MeshStandardMaterial({ color: 0x1a3a1a, roughness: 0.9 })
-                );
-                frond.rotation.x = -0.3 - Math.random() * 0.4;
-                frond.rotation.y = (f / fronds) * Math.PI * 2;
-                frond.position.y = 0.4;
-                fernGroup.add(frond);
+            const fernScale = 0.5 + Math.random() * 0.3;
+            const g = 0.8 + Math.random() * 0.5;
+
+            for (let f = 0; f < frondsPerFern; f++) {
+                position.set(x, 0, z);
+                euler.set(-0.35 - Math.random() * 0.35, (f / frondsPerFern) * Math.PI * 2 + Math.random() * 0.4, 0, 'YXZ');
+                quaternion.setFromEuler(euler);
+                scale.setScalar(fernScale);
+                matrix.compose(position, quaternion, scale);
+                mesh.setMatrixAt(idx, matrix);
+                color.setRGB(0.10 * g, 0.23 * g, 0.10 * g);
+                mesh.setColorAt(idx, color);
+                idx++;
             }
-            fernGroup.position.set(x, 0, z);
-            fernGroup.scale.setScalar(0.5 + Math.random() * 0.3);
-            this.scene.add(fernGroup);
-            this.levelObjects.push(fernGroup);
         }
+        mesh.count = idx;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        this.scene.add(mesh);
+        this.levelObjects.push(mesh);
     }
 
+    // Moths rendered as 3 instanced meshes total (bodies + 2 wings) instead of
+    // ~45 individual meshes; wings still flap by updating instance matrices.
     createMoths(count = 15) {
-        if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
+
+        const bodyGeo = new THREE.CapsuleGeometry(0.02, 0.04, 4, 6);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
+        this.mothBodies = new THREE.InstancedMesh(bodyGeo, bodyMat, count);
+
+        const wingGeo = new THREE.PlaneGeometry(0.06, 0.04);
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x9a8a7a, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+        this.mothLeftWings = new THREE.InstancedMesh(wingGeo, wingMat, count);
+        this.mothRightWings = new THREE.InstancedMesh(wingGeo, wingMat.clone(), count);
+
+        // Moths flutter constantly; skip frustum culling on the small instanced sets
+        this.mothBodies.frustumCulled = false;
+        this.mothLeftWings.frustumCulled = false;
+        this.mothRightWings.frustumCulled = false;
+
+        this.scene.add(this.mothBodies, this.mothLeftWings, this.mothRightWings);
+        this.levelObjects.push(this.mothBodies, this.mothLeftWings, this.mothRightWings);
+
         for (let i = 0; i < count; i++) {
-            const mothGroup = new THREE.Group();
-            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
-            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.04, 4, 6), bodyMat);
-            mothGroup.add(body);
-
-            const wingMat = new THREE.MeshStandardMaterial({ color: 0x9a8a7a, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
-            const leftWing = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.04), wingMat);
-            leftWing.position.set(0.03, 0, 0);
-            leftWing.rotation.y = 0.3;
-            mothGroup.add(leftWing);
-            const rightWing = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.04), wingMat.clone());
-            rightWing.position.set(-0.03, 0, 0);
-            rightWing.rotation.y = -0.3;
-            mothGroup.add(rightWing);
-
             const x = (Math.random() - 0.5) * 20;
             const y = 1.5 + Math.random() * 2;
             const z = (Math.random() - 0.5) * 260;
-            mothGroup.position.set(x, y, z);
-
-            this.scene.add(mothGroup);
-            this.levelObjects.push(mothGroup);
             this.moths.push({
-                mesh: mothGroup, leftWing, rightWing,
-                basePos: mothGroup.position.clone(),
+                index: i,
+                basePos: new THREE.Vector3(x, y, z),
                 phase: Math.random() * Math.PI * 2,
                 speed: 2 + Math.random() * 3,
                 radius: 0.3 + Math.random() * 0.5
             });
         }
+        this.updateMoths(0);
     }
 
     createBananaSlugs(count = 8) {
-        if (this.isMobile) count = Math.floor(count * 0.5);
+        count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
             const slugGroup = new THREE.Group();
             const body = new THREE.Mesh(
@@ -557,27 +901,32 @@ export class LevelManager {
 
     // ==================== LEVEL 1: CLEAR NIGHT ====================
     createLevel1() {
-        this.scene.background = new THREE.Color(0x050510);
-        this.scene.fog = new THREE.FogExp2(0x050510, this.isMobile ? 0.018 : 0.012);
-        
+        this.scene.background = new THREE.Color(0x070714);
+        this.scene.fog = new THREE.FogExp2(0x070714, this.isMobile ? 0.018 : 0.012);
+
         this.createRoad(0);
         this.createGrass(0x0a1a0a);
         this.createCliff();
-        this.createTrees(this.isMobile ? 50 : 100, -1);
-        this.createUnderbrush(this.isMobile ? 20 : 50);
+        this.createTrees(100, -1);
+        this.createUnderbrush(50);
         this.createBananaSlugs(6);
-        this.createMoths(this.isMobile ? 8 : 15);
+        this.createMoths(15);
         this.placeRoadSigns();
         this.createStars();
-        this.createMoonlight(0.15);
+        this.createMoonlight(0.3);
 
-        const ambient = new THREE.AmbientLight(0x1a1a2e, 0.3);
+        const ambient = new THREE.AmbientLight(0x1a1a2e, 0.45);
         this.scene.add(ambient);
         this.levelObjects.push(ambient);
+
+        // Cool sky glow vs warm ground bounce for subtle color depth
+        const hemi = new THREE.HemisphereLight(0x25304d, 0x0c100c, 0.4);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
     }
 
     createStars() {
-        const starCount = this.isMobile ? 300 : 800;
+        const starCount = this.getScaledCount(800);
         const starGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
@@ -598,41 +947,61 @@ export class LevelManager {
     
     // ==================== LEVEL 2: JUST AFTER SUNSET ====================
     createLevel2() {
-        this.scene.background = new THREE.Color(0x0a0510);
-        this.scene.fog = new THREE.FogExp2(0x0a0510, this.isMobile ? 0.025 : 0.018);
-        
+        this.scene.background = new THREE.Color(0x0d0714);
+        this.scene.fog = new THREE.FogExp2(0x0d0714, this.isMobile ? 0.025 : 0.018);
+
         this.createRoad(0);
         this.createGrass(0x0d1a0d);
         this.createCliff();
-        this.createTrees(this.isMobile ? 60 : 120, -1);
-        this.createUnderbrush(this.isMobile ? 25 : 60);
+        this.createTrees(120, -1);
+        this.createUnderbrush(60);
         this.createBananaSlugs(10);
-        this.createMoths(this.isMobile ? 12 : 25);
+        this.createMoths(25);
         this.placeRoadSigns();
         this.createDuskSky();
-        this.createMoonlight(0.08);
+        this.createMoonlight(0.15);
 
-        const ambient = new THREE.AmbientLight(0x1a1020, 0.2);
+        const ambient = new THREE.AmbientLight(0x1a1020, 0.35);
         this.scene.add(ambient);
         this.levelObjects.push(ambient);
 
-        const horizonLight = new THREE.DirectionalLight(0xff6633, 0.06);
+        const hemi = new THREE.HemisphereLight(0x33203a, 0x0d0f0c, 0.35);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
+
+        const horizonLight = new THREE.DirectionalLight(0xff6633, 0.35);
         horizonLight.position.set(-50, 5, 0);
         this.scene.add(horizonLight);
         this.levelObjects.push(horizonLight);
     }
 
     createDuskSky() {
+        // Painted gradient: ember horizon fading to deep dusk blue
+        const canvas = document.createElement('canvas');
+        canvas.width = 2;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 256, 0, 0);
+        grad.addColorStop(0, '#3a1622');
+        grad.addColorStop(0.25, '#66284a');
+        grad.addColorStop(0.55, '#2a1a3e');
+        grad.addColorStop(1, '#0a0612');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 2, 256);
+        const skyTex = new THREE.CanvasTexture(canvas);
+        skyTex.colorSpace = THREE.SRGBColorSpace;
+        this._levelTextures.push(skyTex);
+
         const horizon = new THREE.Mesh(
             new THREE.PlaneGeometry(400, 60),
-            new THREE.MeshBasicMaterial({ color: 0x331122, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+            new THREE.MeshBasicMaterial({ map: skyTex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, fog: false })
         );
         horizon.position.set(-120, 15, 0);
         horizon.rotation.y = Math.PI / 2;
         this.scene.add(horizon);
         this.levelObjects.push(horizon);
 
-        const starCount = this.isMobile ? 100 : 300;
+        const starCount = this.getScaledCount(300);
         const starGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(starCount * 3);
         for (let i = 0; i < starCount; i++) {
@@ -653,23 +1022,27 @@ export class LevelManager {
     
     // ==================== LEVEL 3: RAIN & WIND STORM ====================
     createLevel3() {
-        this.scene.background = new THREE.Color(0x030308);
-        this.scene.fog = new THREE.FogExp2(0x030308, this.isMobile ? 0.06 : 0.045);
-        
+        this.scene.background = new THREE.Color(0x040409);
+        this.scene.fog = new THREE.FogExp2(0x040409, this.isMobile ? 0.06 : 0.045);
+
         this.createRoad(1);
         this.createGrass(0x0d260d);
         this.createCliff();
-        this.createTrees(this.isMobile ? 80 : 180, -1);
-        this.createUnderbrush(this.isMobile ? 15 : 40);
+        this.createTrees(180, -1);
+        this.createUnderbrush(40);
         this.placeRoadSigns();
         this.createPuddles();
         this.createRain();
-        this.createMoonlight(0.05);
+        this.createMoonlight(0.12);
         this.createStormReservoir();
 
-        const ambient = new THREE.AmbientLight(0x111122, 0.12);
+        const ambient = new THREE.AmbientLight(0x111122, 0.3);
         this.scene.add(ambient);
         this.levelObjects.push(ambient);
+
+        const hemi = new THREE.HemisphereLight(0x1d2740, 0x0a0d0a, 0.3);
+        this.scene.add(hemi);
+        this.levelObjects.push(hemi);
         this.windStrength = 1.0;
     }
 
@@ -683,25 +1056,34 @@ export class LevelManager {
         water.userData.isWater = true;
         this.scene.add(water);
         this.levelObjects.push(water);
+        this._stormWater = water;
     }
     
     createPuddles() {
-        const puddleCount = this.isMobile ? 16 : 32;
+        const puddleCount = this.getScaledCount(32);
+        const geo = new THREE.CircleGeometry(1, 16);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.75 });
+        const mesh = new THREE.InstancedMesh(geo, mat, puddleCount);
+
+        const matrix = new THREE.Matrix4();
+        const pos = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+
         for (let i = 0; i < puddleCount; i++) {
-            const puddle = new THREE.Mesh(
-                new THREE.CircleGeometry(0.5 + Math.random() * 1, 16),
-                new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.1, metalness: 0.8, transparent: true, opacity: 0.7 })
-            );
-            puddle.rotation.x = -Math.PI / 2;
-            puddle.position.set((Math.random() - 0.5) * 12, 0.02, (Math.random() - 0.5) * 280);
-            puddle.scale.set(1 + Math.random(), 0.6 + Math.random() * 0.4, 1);
-            this.scene.add(puddle);
-            this.levelObjects.push(puddle);
+            pos.set((Math.random() - 0.5) * 12, 0.02, (Math.random() - 0.5) * 280);
+            scale.set((0.5 + Math.random()) * (0.5 + Math.random() * 1), 1, (0.5 + Math.random()) * (0.6 + Math.random() * 0.4));
+            matrix.compose(pos, quat, scale);
+            mesh.setMatrixAt(i, matrix);
         }
+        mesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(mesh);
+        this.levelObjects.push(mesh);
     }
-    
+
     createRain() {
-        const rainCount = this.isMobile ? 3000 : 8000;
+        const rainCount = this.getScaledCount(8000);
         this.rainGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array(rainCount * 3);
         this.rainVelocities = new Float32Array(rainCount);
@@ -715,23 +1097,17 @@ export class LevelManager {
         this.rain = new THREE.Points(this.rainGeometry, new THREE.PointsMaterial({
             color: 0x8899aa, size: 0.1, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending
         }));
+        this.rain.frustumCulled = false;
         this.scene.add(this.rain);
+        this.applyRainQuality();
     }
-    
+
     createMoonlight(intensity = 0.12) {
-        const moonlight = new THREE.DirectionalLight(0x6666aa, intensity);
+        const moonlight = new THREE.DirectionalLight(0x6677bb, intensity);
         moonlight.position.set(20, 50, 10);
-        moonlight.castShadow = !this.isMobile;
-        moonlight.shadow.mapSize.width = 512;
-        moonlight.shadow.mapSize.height = 512;
-        const d = 150;
-        moonlight.shadow.camera.left = -d;
-        moonlight.shadow.camera.right = d;
-        moonlight.shadow.camera.top = d;
-        moonlight.shadow.camera.bottom = -d;
-        moonlight.shadow.camera.near = 0.5;
-        moonlight.shadow.camera.far = 200;
-        moonlight.shadow.bias = -0.001;
+        // No shadow casting here: at night the flashlight is the only shadow source
+        // that is perceptible, and skipping this pass removes a full scene render.
+        moonlight.castShadow = false;
         this.scene.add(moonlight);
         this.levelObjects.push(moonlight);
     }
@@ -739,7 +1115,7 @@ export class LevelManager {
     // ==================== UPDATE METHODS ====================
     updateRain(deltaTime, cameraPosition) {
         if (!this.rain || !this.rainGeometry || this.currentLevel !== 3) return;
-        
+
         const positions = this.rainGeometry.attributes.position.array;
         const count = positions.length / 3;
 
@@ -747,11 +1123,20 @@ export class LevelManager {
         const windGust = Math.sin(this.windTime * 0.5) * 0.5 + 0.5;
         const windX = (2 + windGust * 4) * this.windStrength;
         const windZ = Math.sin(this.windTime * 0.3) * 1.5 * this.windStrength;
-        
-        for (let i = 0; i < count; i++) {
-            positions[i * 3 + 1] -= this.rainVelocities[i] * deltaTime * 35;
-            positions[i * 3] += windX * deltaTime;
-            positions[i * 3 + 2] += windZ * deltaTime;
+
+        // Sliced updates: each frame advances 1/interval of the particles by
+        // interval * dt, keeping perceived speed identical while spreading cost.
+        const interval = this.rainUpdateInterval || 1;
+        this.rainFrameCounter = (this.rainFrameCounter + 1) % interval;
+        const sliceSize = Math.ceil(count / interval);
+        const start = this.rainFrameCounter * sliceSize;
+        const end = Math.min(start + sliceSize, count);
+        const dt = deltaTime * interval;
+
+        for (let i = start; i < end; i++) {
+            positions[i * 3 + 1] -= this.rainVelocities[i] * dt * 35;
+            positions[i * 3] += windX * dt;
+            positions[i * 3 + 2] += windZ * dt;
             if (positions[i * 3 + 1] < 0) {
                 positions[i * 3] = cameraPosition.x + (Math.random() - 0.5) * 120;
                 positions[i * 3 + 1] = 40 + Math.random() * 10;
@@ -760,16 +1145,15 @@ export class LevelManager {
         }
         this.rainGeometry.attributes.position.needsUpdate = true;
 
-        // Choppy storm water
-        this.levelObjects.forEach(obj => {
-            if (obj.userData && obj.userData.isWater && obj.geometry && obj.geometry.attributes.position) {
-                const wp = obj.geometry.attributes.position.array;
-                for (let i = 0; i < wp.length / 3; i++) {
-                    wp[i * 3 + 2] = Math.sin(this.windTime * 2 + i * 0.3) * 0.3;
-                }
-                obj.geometry.attributes.position.needsUpdate = true;
+        // Choppy storm water (cache the mesh reference at level build time)
+        if (this._stormWater) {
+            const wp = this._stormWater.geometry.attributes.position.array;
+            const wt = this.windTime * 2;
+            for (let i = 0; i < wp.length / 3; i++) {
+                wp[i * 3 + 2] = Math.sin(wt + i * 0.3) * 0.3;
             }
-        });
+            this._stormWater.geometry.attributes.position.needsUpdate = true;
+        }
     }
     
     createSplashParticle(x, z) {
@@ -822,17 +1206,48 @@ export class LevelManager {
     }
 
     updateMoths(deltaTime) {
-        this.moths.forEach(moth => {
+        if (!this.mothBodies) return;
+
+        const matrix = this._scratchMatrix;
+        const quat = this._scratchQuat;
+        const euler = this._scratchEuler;
+        const pos = this._scratchPos;
+        const scale = this._scratchScale.set(1, 1, 1);
+
+        for (let i = 0; i < this.moths.length; i++) {
+            const moth = this.moths[i];
             moth.phase += deltaTime * moth.speed;
-            moth.mesh.position.set(
-                moth.basePos.x + Math.sin(moth.phase) * moth.radius,
-                moth.basePos.y + Math.sin(moth.phase * 1.7) * 0.15,
-                moth.basePos.z + Math.cos(moth.phase * 0.8) * moth.radius
-            );
+
+            const mx = moth.basePos.x + Math.sin(moth.phase) * moth.radius;
+            const my = moth.basePos.y + Math.sin(moth.phase * 1.7) * 0.15;
+            const mz = moth.basePos.z + Math.cos(moth.phase * 0.8) * moth.radius;
+
+            // Body
+            pos.set(mx, my, mz);
+            quat.identity();
+            matrix.compose(pos, quat, scale);
+            this.mothBodies.setMatrixAt(moth.index, matrix);
+
             const wingAngle = Math.sin(moth.phase * 15) * 0.5;
-            moth.leftWing.rotation.y = 0.3 + wingAngle;
-            moth.rightWing.rotation.y = -0.3 - wingAngle;
-        });
+
+            // Left wing
+            pos.set(mx + 0.03, my, mz);
+            euler.set(0, 0.3 + wingAngle, 0);
+            quat.setFromEuler(euler);
+            matrix.compose(pos, quat, scale);
+            this.mothLeftWings.setMatrixAt(moth.index, matrix);
+
+            // Right wing
+            pos.set(mx - 0.03, my, mz);
+            euler.set(0, -0.3 - wingAngle, 0);
+            quat.setFromEuler(euler);
+            matrix.compose(pos, quat, scale);
+            this.mothRightWings.setMatrixAt(moth.index, matrix);
+        }
+
+        this.mothBodies.instanceMatrix.needsUpdate = true;
+        this.mothLeftWings.instanceMatrix.needsUpdate = true;
+        this.mothRightWings.instanceMatrix.needsUpdate = true;
     }
     
     precomputeRoadData() {
@@ -868,18 +1283,21 @@ export class LevelManager {
             return this._fallbackRoadData;
         }
 
-        let closestData = this.precomputedRoadData[0];
-        let minZDiff = Math.abs(closestData.point.z - z);
-
-        for (let i = 1; i < this.precomputedRoadData.length; i++) {
-            const data = this.precomputedRoadData[i];
-            const zDiff = Math.abs(data.point.z - z);
-            if (zDiff < minZDiff) {
-                minZDiff = zDiff;
-                closestData = data;
+        // Binary search — the precomputed table is monotonic in z
+        const data = this.precomputedRoadData;
+        let lo = 0;
+        let hi = data.length - 1;
+        while (hi - lo > 1) {
+            const mid = (lo + hi) >> 1;
+            if (data[mid].point.z <= z) {
+                lo = mid;
+            } else {
+                hi = mid;
             }
         }
-        return closestData;
+        return Math.abs(data[lo].point.z - z) <= Math.abs(data[hi].point.z - z)
+            ? data[lo]
+            : data[hi];
     }
     
     getCurrentLevel() { return this.currentLevel; }

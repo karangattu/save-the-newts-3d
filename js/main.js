@@ -28,6 +28,14 @@ class Game {
         this.elapsedTime = 0;
         this.lastTime = 0;
 
+        // Adaptive rendering starts at full fidelity and only steps down after
+        // sustained slow frames. Hysteresis prevents visible quality thrashing.
+        this.qualityLevel = 3;
+        this.resolutionScale = 1;
+        this.frameTimeAverage = 1000 / 60;
+        this.qualitySampleFrames = 0;
+        this.lastQualityChange = 0;
+
         // High score
         this.highScore = parseInt(localStorage.getItem('newtRescueHighScore')) || 0;
 
@@ -40,6 +48,9 @@ class Game {
         // Initialize systems
         this.initSystems();
         this.setupEventListeners();
+
+        // Expose handle for debugging/profiling
+        window.__game = this;
 
         // Start render loop
         this.animate();
@@ -62,11 +73,13 @@ class Game {
 
         this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isMobile ? 1.5 : 2;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.qualityLevel = this.isMobile ? 1 : 3;
+        this.renderer.setPixelRatio(this.getTargetPixelRatio());
         this.renderer.shadowMap.enabled = !this.isMobile;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.35;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
@@ -96,15 +109,21 @@ class Game {
         this.newtManager = new NewtManager(
             this.scene,
             this.flashlight,
-            this.roadCurve
+            this.roadCurve,
+            this.isMobile
         );
         this.newtManager.prewarmPool(15);
 
-        this.carManager = new CarManager(this.scene, this.roadCurve);
+        this.carManager = new CarManager(this.scene, this.roadCurve, {
+            isLowEnd: this.isMobile,
+            enableDynamicLights: !this.isMobile
+        });
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
         this.predatorManager = new PredatorManager(this.scene, this.camera);
         this.predatorManager.prewarmPool();
+
+        this.applyQualitySettings();
 
         // Setup flashlight toggle callbacks
         this.setupFlashlightToggle();
@@ -123,8 +142,54 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        const maxPixelRatio = this.isMobile ? 1.5 : 2;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+        this.renderer.setPixelRatio(this.getTargetPixelRatio());
+    }
+
+    getTargetPixelRatio() {
+        return Math.min(window.devicePixelRatio || 1, this.maxPixelRatio) * this.resolutionScale;
+    }
+
+    applyQualitySettings() {
+        this.levelManager.setQualityLevel(this.qualityLevel);
+        this.flashlight.setQualityLevel(this.qualityLevel);
+        this.newtManager.setQualityLevel(this.qualityLevel);
+        this.carManager.setQualityLevel(this.qualityLevel);
+        this.renderer.setPixelRatio(this.getTargetPixelRatio());
+    }
+
+    updateAdaptiveQuality(frameTimeMs, nowMs) {
+        if (this.state !== 'playing') return;
+
+        this.frameTimeAverage = this.frameTimeAverage * 0.95 + frameTimeMs * 0.05;
+        this.qualitySampleFrames++;
+
+        const cooldownMs = 4000;
+        if (this.qualitySampleFrames < 120 || nowMs - this.lastQualityChange < cooldownMs) return;
+
+        let changed = false;
+        if (this.frameTimeAverage > 22) {
+            if (this.resolutionScale > 0.65) {
+                this.resolutionScale = Math.max(0.65, this.resolutionScale - 0.125);
+                changed = true;
+            } else if (this.qualityLevel > 1) {
+                this.qualityLevel--;
+                changed = true;
+            }
+        } else if (this.frameTimeAverage < 17) {
+            if (this.qualityLevel < 3) {
+                this.qualityLevel++;
+                changed = true;
+            } else if (this.resolutionScale < 1) {
+                this.resolutionScale = Math.min(1, this.resolutionScale + 0.125);
+                changed = true;
+            }
+        }
+
+        this.qualitySampleFrames = 0;
+        if (changed) {
+            this.lastQualityChange = nowMs;
+            this.applyQualitySettings();
+        }
     }
 
     setupFlashlightToggle() {
@@ -740,8 +805,11 @@ class Game {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        const currentTime = performance.now() / 1000;
+        const nowMs = performance.now();
+        const currentTime = nowMs / 1000;
         let deltaTime = Math.min(currentTime - this.lastTime, 0.1);
+
+        this.updateAdaptiveQuality(deltaTime * 1000, nowMs);
 
         if (this.smoothedDeltaTime === undefined) {
             this.smoothedDeltaTime = deltaTime;

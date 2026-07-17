@@ -459,22 +459,36 @@ export class NewtManager {
 
     getRoadDataAtZ(z) {
         if (!this.roadCurve || !this.precomputedRoadData || this.precomputedRoadData.length === 0) {
+            if (!this._rdFallback) {
+                this._rdFallback = {
+                    point: new THREE.Vector3(),
+                    tangent: new THREE.Vector3(0, 0, 1),
+                    normal: new THREE.Vector3(1, 0, 0),
+                    t: 0
+                };
+            }
             this._rdFallback.point.set(0, 0, z);
             return this._rdFallback;
         }
 
-        let closestData = this.precomputedRoadData[0];
-        let minZDiff = Math.abs(closestData.point.z - z);
+        const data = this.precomputedRoadData;
+        let low = 0;
+        let high = data.length - 1;
 
-        for (let i = 1; i < this.precomputedRoadData.length; i++) {
-            const data = this.precomputedRoadData[i];
-            const zDiff = Math.abs(data.point.z - z);
-            if (zDiff < minZDiff) {
-                minZDiff = zDiff;
-                closestData = data;
+        // Road samples are monotonic in Z, so only the two samples around the
+        // requested position can be closest.
+        while (high - low > 1) {
+            const middle = (low + high) >> 1;
+            if (data[middle].point.z <= z) {
+                low = middle;
+            } else {
+                high = middle;
             }
         }
-        return closestData;
+
+        return Math.abs(data[low].point.z - z) <= Math.abs(data[high].point.z - z)
+            ? data[low]
+            : data[high];
     }
 
     update(deltaTime, elapsedTime, playerPosition) {
