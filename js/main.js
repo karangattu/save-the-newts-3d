@@ -521,6 +521,8 @@ class Game {
         // Update elapsed time
         this.elapsedTime += deltaTime;
 
+        this.levelManager.updateWeather(deltaTime);
+
         // Update rain/dust and splashes through level manager
         this.levelManager.updateRain(deltaTime, this.player.getPosition());
         this.levelManager.updateSplashes(deltaTime, this.player.getPosition());

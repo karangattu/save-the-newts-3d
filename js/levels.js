@@ -31,6 +31,10 @@ export class LevelManager {
 
         // Wind for level 3
         this.windStrength = 0;
+        this.weatherTime = 0;
+        this.weatherTransition = null;
+        this.targetFogDensity = 0;
+        this.targetWindStrength = 0;
         this.windDirection = new THREE.Vector3(1, 0, 0.3);
         this.windTime = 0;
 
@@ -76,10 +80,19 @@ export class LevelManager {
     applyRainQuality() {
         if (!this.rainGeometry) return;
         const count = this.rainGeometry.attributes.position.count;
-        this.rainGeometry.setDrawRange(0, Math.floor(count * this.rainActiveFraction));
+        const activeVertices = Math.floor((count * this.rainActiveFraction) / 2) * 2;
+        this.rainGeometry.setDrawRange(0, activeVertices);
     }
     
     loadLevel(levelNum) {
+        const previousBackground = this.scene.background && this.scene.background.isColor
+            ? this.scene.background.clone()
+            : null;
+        const previousFogColor = this.scene.fog ? this.scene.fog.color.clone() : null;
+        const previousFogDensity = this.scene.fog && this.scene.fog.isFogExp2
+            ? this.scene.fog.density
+            : 0;
+
         this.currentLevel = levelNum;
         this.clearLevel();
         
@@ -89,6 +102,40 @@ export class LevelManager {
             this.createLevel2();
         } else if (levelNum === 3) {
             this.createLevel3();
+        }
+
+        this.targetFogDensity = this.scene.fog && this.scene.fog.isFogExp2
+            ? this.scene.fog.density
+            : 0;
+        this.targetWindStrength = this.windStrength;
+
+        if (previousBackground && previousFogColor && this.scene.fog && this.scene.fog.isFogExp2) {
+            const targetBackground = this.scene.background.clone();
+            const targetFogColor = this.scene.fog.color.clone();
+            this.scene.background.copy(previousBackground);
+            this.scene.fog.color.copy(previousFogColor);
+            this.scene.fog.density = previousFogDensity;
+            this.windStrength = 0;
+
+            let rainOpacity = 0;
+            if (this.rain && this.rain.material) {
+                rainOpacity = this.rain.material.opacity;
+                this.rain.material.opacity = 0;
+            }
+
+            this.weatherTransition = {
+                elapsed: 0,
+                duration: 4,
+                fromBackground: previousBackground,
+                toBackground: targetBackground,
+                fromFogColor: previousFogColor,
+                toFogColor: targetFogColor,
+                fromFogDensity: previousFogDensity,
+                toFogDensity: this.targetFogDensity,
+                rainOpacity
+            };
+        } else {
+            this.weatherTransition = null;
         }
         
         return {
@@ -128,6 +175,39 @@ export class LevelManager {
         this.mothRightWings = null;
         this._stormWater = null;
         this.windStrength = 0;
+    }
+
+    updateWeather(deltaTime) {
+        this.weatherTime += deltaTime;
+
+        if (this.weatherTransition) {
+            const transition = this.weatherTransition;
+            transition.elapsed += deltaTime;
+            const linear = Math.min(transition.elapsed / transition.duration, 1);
+            const blend = linear * linear * (3 - 2 * linear);
+
+            this.scene.background.lerpColors(transition.fromBackground, transition.toBackground, blend);
+            this.scene.fog.color.lerpColors(transition.fromFogColor, transition.toFogColor, blend);
+            this.scene.fog.density = THREE.MathUtils.lerp(
+                transition.fromFogDensity,
+                transition.toFogDensity,
+                blend
+            );
+            this.windStrength = this.targetWindStrength * blend;
+            if (this.rain && this.rain.material) {
+                this.rain.material.opacity = transition.rainOpacity * blend;
+            }
+
+            if (linear >= 1) this.weatherTransition = null;
+            return;
+        }
+
+        if (this.scene.fog && this.scene.fog.isFogExp2 && this.targetFogDensity > 0) {
+            const variation = this.currentLevel === 3
+                ? Math.sin(this.weatherTime * 0.22) * 0.04
+                : Math.sin(this.weatherTime * 0.08) * 0.015;
+            this.scene.fog.density = this.targetFogDensity * (1 + variation);
+        }
     }
     
     // ==================== ALMA BRIDGE ROAD CURVE (same for all 3 levels) ====================
@@ -563,12 +643,20 @@ export class LevelManager {
         this.precomputeRoadData();
 
         const roadGeometry = this.createRibbonGeometry(this.roadCurve, roadWidth, 250);
-        const roadMaterial = new THREE.MeshStandardMaterial({
+        const roadOptions = {
             map: this.createAsphaltTexture(wetness),
-            roughness: wetness > 0 ? 0.25 : 0.55,
-            metalness: wetness > 0 ? 0.35 : 0.05,
+            roughness: wetness > 0 ? 0.2 : 0.55,
+            metalness: wetness > 0 ? 0.28 : 0.05,
             side: THREE.DoubleSide
-        });
+        };
+        if (wetness > 0) {
+            roadOptions.clearcoat = 0.85;
+            roadOptions.clearcoatRoughness = 0.18;
+            roadOptions.reflectivity = 0.75;
+        }
+        const roadMaterial = wetness > 0
+            ? new THREE.MeshPhysicalMaterial(roadOptions)
+            : new THREE.MeshStandardMaterial(roadOptions);
 
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.position.y = 0.01;
@@ -730,6 +818,61 @@ export class LevelManager {
         rightGrass.position.set(45, -0.01, 0);
         this.scene.add(rightGrass);
         this.levelObjects.push(rightGrass);
+    }
+
+    // Two low-cost instanced layers break up the empty cliff side and give the
+    // fog silhouettes at multiple depths to work against.
+    createEnvironmentLayers() {
+        const rockCount = this.getScaledCount(22);
+        const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96, metalness: 0.02 });
+        const rocks = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
+
+        const matrix = this._scratchMatrix;
+        const quat = this._scratchQuat;
+        const euler = this._scratchEuler;
+        const pos = this._scratchPos;
+        const scale = this._scratchScale;
+        const color = new THREE.Color();
+
+        for (let i = 0; i < rockCount; i++) {
+            const data = this.getRoadDataAtT((i + 0.5) / rockCount);
+            pos.copy(data.point).addScaledVector(data.normal, 10 + Math.random() * 8);
+            pos.y = 0.25 + Math.random() * 0.35;
+            euler.set(Math.random() * 0.35, Math.random() * Math.PI, Math.random() * 0.25);
+            quat.setFromEuler(euler);
+            scale.set(0.7 + Math.random() * 1.4, 0.45 + Math.random() * 0.8, 0.8 + Math.random() * 1.8);
+            matrix.compose(pos, quat, scale);
+            rocks.setMatrixAt(i, matrix);
+            const shade = 0.045 + Math.random() * 0.035;
+            color.setRGB(shade, shade * 0.95, shade * 0.9);
+            rocks.setColorAt(i, color);
+        }
+        rocks.instanceMatrix.needsUpdate = true;
+        if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+
+        const ridgeCount = this.getScaledCount(12);
+        const ridgeGeo = new THREE.ConeGeometry(1, 1, 6);
+        const ridgeMat = new THREE.MeshStandardMaterial({
+            color: this.currentLevel === 2 ? 0x100912 : 0x05080c,
+            roughness: 1,
+            flatShading: true
+        });
+        const ridges = new THREE.InstancedMesh(ridgeGeo, ridgeMat, ridgeCount);
+        for (let i = 0; i < ridgeCount; i++) {
+            const data = this.getRoadDataAtT((i + 0.5) / ridgeCount);
+            pos.copy(data.point).addScaledVector(data.normal, 50 + Math.random() * 35);
+            const height = 14 + Math.random() * 18;
+            pos.y = -10 + height * 0.5;
+            quat.identity();
+            scale.set(8 + Math.random() * 10, height, 8 + Math.random() * 9);
+            matrix.compose(pos, quat, scale);
+            ridges.setMatrixAt(i, matrix);
+        }
+        ridges.instanceMatrix.needsUpdate = true;
+
+        this.scene.add(rocks, ridges);
+        this.levelObjects.push(rocks, ridges);
     }
 
     createTrees(count, side) {
@@ -902,11 +1045,12 @@ export class LevelManager {
     // ==================== LEVEL 1: CLEAR NIGHT ====================
     createLevel1() {
         this.scene.background = new THREE.Color(0x070714);
-        this.scene.fog = new THREE.FogExp2(0x070714, this.isMobile ? 0.018 : 0.012);
+        this.scene.fog = new THREE.FogExp2(0x070714, this.isMobile ? 0.012 : 0.008);
 
         this.createRoad(0);
         this.createGrass(0x0a1a0a);
         this.createCliff();
+        this.createEnvironmentLayers();
         this.createTrees(100, -1);
         this.createUnderbrush(50);
         this.createBananaSlugs(6);
@@ -948,11 +1092,12 @@ export class LevelManager {
     // ==================== LEVEL 2: JUST AFTER SUNSET ====================
     createLevel2() {
         this.scene.background = new THREE.Color(0x0d0714);
-        this.scene.fog = new THREE.FogExp2(0x0d0714, this.isMobile ? 0.025 : 0.018);
+        this.scene.fog = new THREE.FogExp2(0x160b1b, this.isMobile ? 0.017 : 0.012);
 
         this.createRoad(0);
         this.createGrass(0x0d1a0d);
         this.createCliff();
+        this.createEnvironmentLayers();
         this.createTrees(120, -1);
         this.createUnderbrush(60);
         this.createBananaSlugs(10);
@@ -1023,11 +1168,12 @@ export class LevelManager {
     // ==================== LEVEL 3: RAIN & WIND STORM ====================
     createLevel3() {
         this.scene.background = new THREE.Color(0x040409);
-        this.scene.fog = new THREE.FogExp2(0x040409, this.isMobile ? 0.06 : 0.045);
+        this.scene.fog = new THREE.FogExp2(0x080b12, this.isMobile ? 0.035 : 0.025);
 
         this.createRoad(1);
         this.createGrass(0x0d260d);
         this.createCliff();
+        this.createEnvironmentLayers();
         this.createTrees(180, -1);
         this.createUnderbrush(40);
         this.placeRoadSigns();
@@ -1063,7 +1209,16 @@ export class LevelManager {
         const puddleCount = this.getScaledCount(32);
         const geo = new THREE.CircleGeometry(1, 16);
         geo.rotateX(-Math.PI / 2);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.75 });
+        const mat = new THREE.MeshPhysicalMaterial({
+            color: 0x151b2a,
+            roughness: 0.08,
+            metalness: 0.35,
+            clearcoat: 1,
+            clearcoatRoughness: 0.08,
+            reflectivity: 0.9,
+            transparent: true,
+            opacity: 0.72
+        });
         const mesh = new THREE.InstancedMesh(geo, mat, puddleCount);
 
         const matrix = new THREE.Matrix4();
@@ -1085,17 +1240,25 @@ export class LevelManager {
     createRain() {
         const rainCount = this.getScaledCount(8000);
         this.rainGeometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(rainCount * 3);
+        const positions = new Float32Array(rainCount * 6);
         this.rainVelocities = new Float32Array(rainCount);
         for (let i = 0; i < rainCount; i++) {
-            positions[i * 3] = (Math.random() - 0.5) * 120;
-            positions[i * 3 + 1] = Math.random() * 50;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
+            const offset = i * 6;
+            const x = (Math.random() - 0.5) * 120;
+            const y = Math.random() * 50;
+            const z = (Math.random() - 0.5) * 120;
+            positions[offset] = x;
+            positions[offset + 1] = y;
+            positions[offset + 2] = z;
+            positions[offset + 3] = x - 0.12;
+            positions[offset + 4] = y + 0.75;
+            positions[offset + 5] = z;
             this.rainVelocities[i] = 0.5 + Math.random() * 0.5;
         }
         this.rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this.rain = new THREE.Points(this.rainGeometry, new THREE.PointsMaterial({
-            color: 0x8899aa, size: 0.1, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending
+        this.rain = new THREE.LineSegments(this.rainGeometry, new THREE.LineBasicMaterial({
+            color: 0x94a9bd, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending,
+            depthWrite: false
         }));
         this.rain.frustumCulled = false;
         this.scene.add(this.rain);
@@ -1117,7 +1280,7 @@ export class LevelManager {
         if (!this.rain || !this.rainGeometry || this.currentLevel !== 3) return;
 
         const positions = this.rainGeometry.attributes.position.array;
-        const count = positions.length / 3;
+        const count = this.rainVelocities.length;
 
         this.windTime += deltaTime;
         const windGust = Math.sin(this.windTime * 0.5) * 0.5 + 0.5;
@@ -1134,13 +1297,24 @@ export class LevelManager {
         const dt = deltaTime * interval;
 
         for (let i = start; i < end; i++) {
-            positions[i * 3 + 1] -= this.rainVelocities[i] * dt * 35;
-            positions[i * 3] += windX * dt;
-            positions[i * 3 + 2] += windZ * dt;
-            if (positions[i * 3 + 1] < 0) {
-                positions[i * 3] = cameraPosition.x + (Math.random() - 0.5) * 120;
-                positions[i * 3 + 1] = 40 + Math.random() * 10;
-                positions[i * 3 + 2] = cameraPosition.z + (Math.random() - 0.5) * 120;
+            const offset = i * 6;
+            const fall = this.rainVelocities[i] * dt * 35;
+            positions[offset] += windX * dt;
+            positions[offset + 1] -= fall;
+            positions[offset + 2] += windZ * dt;
+            positions[offset + 3] += windX * dt;
+            positions[offset + 4] -= fall;
+            positions[offset + 5] += windZ * dt;
+            if (positions[offset + 1] < 0) {
+                const x = cameraPosition.x + (Math.random() - 0.5) * 120;
+                const y = 40 + Math.random() * 10;
+                const z = cameraPosition.z + (Math.random() - 0.5) * 120;
+                positions[offset] = x;
+                positions[offset + 1] = y;
+                positions[offset + 2] = z;
+                positions[offset + 3] = x - 0.12 - windX * 0.02;
+                positions[offset + 4] = y + 0.75;
+                positions[offset + 5] = z - windZ * 0.02;
             }
         }
         this.rainGeometry.attributes.position.needsUpdate = true;

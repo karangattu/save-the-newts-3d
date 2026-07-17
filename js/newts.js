@@ -283,6 +283,7 @@ export class NewtManager {
             backLeft: backLeftLeg
         };
         group.userData.tail = tailGroup;
+        group.userData.head = headGroup;
         group.userData.bodyMaterial = bodyMaterial;
         group.userData.bellyMaterial = bellyMaterial;
 
@@ -353,7 +354,10 @@ export class NewtManager {
         }
 
         if (mesh.userData.tail) {
-            mesh.userData.tail.rotation.y = 0;
+            mesh.userData.tail.rotation.set(0, 0, 0);
+        }
+        if (mesh.userData.head) {
+            mesh.userData.head.rotation.set(0, 0, 0);
         }
     }
 
@@ -432,6 +436,8 @@ export class NewtManager {
             isPaused: false,
             pauseDuration: 0,
             nextPauseIn: 2 + Math.random() * 4,
+            blinkTimer: 1 + Math.random() * 3,
+            blinkTime: 0,
             isBonus: mesh.userData.isBonus
         };
 
@@ -550,8 +556,8 @@ export class NewtManager {
             const legs = newt.mesh.userData.legs;
             if (legs && !newt.isPaused) {
                 const phase = newt.walkCycle;
-                const swingX = 0.35;
-                const swingZ = 0.15;
+                const swingX = 0.38;
+                const swingZ = 0.17;
 
                 legs.frontRight.rotation.x = Math.sin(phase) * swingX;
                 legs.frontRight.rotation.z = -0.2 + Math.cos(phase) * swingZ;
@@ -565,21 +571,56 @@ export class NewtManager {
                 legs.backRight.rotation.x = Math.sin(phase + Math.PI) * swingX;
                 legs.backRight.rotation.z = -0.2 + Math.cos(phase + Math.PI) * swingZ;
             } else if (legs && newt.isPaused) {
-                legs.frontRight.rotation.x *= 0.9;
-                legs.frontLeft.rotation.x *= 0.9;
-                legs.backRight.rotation.x *= 0.9;
-                legs.backLeft.rotation.x *= 0.9;
+                const settle = Math.exp(-8 * deltaTime);
+                legs.frontRight.rotation.x *= settle;
+                legs.frontLeft.rotation.x *= settle;
+                legs.backRight.rotation.x *= settle;
+                legs.backLeft.rotation.x *= settle;
             }
 
             const newtTail = newt.mesh.userData.tail;
-            if (newtTail && !newt.isPaused) {
-                newtTail.rotation.y = Math.sin(newt.walkCycle * 1.5) * 0.2;
+            if (newtTail) {
+                const targetTailYaw = newt.isPaused
+                    ? Math.sin(elapsedTime * 1.4 + newt.walkCycle) * 0.08
+                    : Math.sin(newt.walkCycle * 1.35) * 0.26;
+                newtTail.rotation.y += (targetTailYaw - newtTail.rotation.y) * Math.min(1, deltaTime * 10);
+                newtTail.rotation.z = newt.isPaused ? 0 : Math.sin(newt.walkCycle * 0.7) * 0.045;
             }
 
-            newt.mesh.position.y = Math.abs(Math.sin(newt.walkCycle * 2)) * 0.01;
+            const newtHead = newt.mesh.userData.head;
+            if (newtHead) {
+                const targetLook = newt.isPaused
+                    ? Math.sin(elapsedTime * 1.7 + newt.walkCycle) * 0.2
+                    : Math.sin(newt.walkCycle) * 0.055;
+                newtHead.rotation.y += (targetLook - newtHead.rotation.y) * Math.min(1, deltaTime * 8);
+                newtHead.rotation.z = newt.isPaused ? 0 : Math.sin(newt.walkCycle * 2) * 0.035;
+            }
+
+            const movingBob = newt.isPaused ? 0 : Math.abs(Math.sin(newt.walkCycle * 2)) * 0.018;
+            newt.mesh.position.y = 0.006 + movingBob;
+            const targetBodyRoll = newt.isPaused ? 0 : Math.sin(newt.walkCycle) * 0.035;
+            newt.mesh.rotation.z += (targetBodyRoll - newt.mesh.rotation.z) * Math.min(1, deltaTime * 10);
             if (!newt.isPaused) {
                 // Face head toward movement direction (head is along local +X)
                 newt.mesh.rotation.y = Math.atan2(-_moveDir.z, _moveDir.x) + Math.sin(newt.walkCycle * 0.7) * 0.01;
+            }
+
+            const eyelids = newt.mesh.userData.eyelids;
+            if (eyelids) {
+                if (newt.blinkTimer === undefined) newt.blinkTimer = 1 + Math.random() * 3;
+                if (newt.blinkTime === undefined) newt.blinkTime = 0;
+                newt.blinkTimer -= deltaTime;
+                if (newt.blinkTimer <= 0 && newt.blinkTime <= 0) {
+                    newt.blinkTime = 0.14;
+                    newt.blinkTimer = 2.5 + Math.random() * 3.5;
+                }
+                let blink = 0;
+                if (newt.blinkTime > 0) {
+                    newt.blinkTime = Math.max(0, newt.blinkTime - deltaTime);
+                    blink = Math.sin((newt.blinkTime / 0.14) * Math.PI);
+                }
+                eyelids.left.position.y = 0.125 + blink * 0.035;
+                eyelids.right.position.y = 0.125 + blink * 0.035;
             }
 
             const isIlluminated = shouldCheckIllumination
