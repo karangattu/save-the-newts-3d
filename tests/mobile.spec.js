@@ -52,7 +52,20 @@ test.describe('Mobile friendliness', () => {
 
     test('fullscreen button has proper touch target size', async ({ page }) => {
         const btn = page.locator('#fullscreen-btn');
-        const box = await btn.boundingBox();
+        await expect(btn).toBeVisible();
+
+        // Read the rendered rectangle in-page. Playwright's boundingBox call
+        // can time out on the render-heavy CI page even after visibility is
+        // established.
+        const box = await page.evaluate(() => {
+            const element = document.querySelector('#fullscreen-btn');
+            if (!element) return null;
+
+            const { width, height } = element.getBoundingClientRect();
+            return { width, height };
+        });
+
+        expect(box).not.toBeNull();
         expect(box.width).toBeGreaterThanOrEqual(34);
         expect(box.height).toBeGreaterThanOrEqual(34);
     });
