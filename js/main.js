@@ -116,7 +116,10 @@ class Game {
 
         this.carManager = new CarManager(this.scene, this.roadCurve, {
             isLowEnd: this.isMobile,
-            enableDynamicLights: !this.isMobile
+            // Per-car SpotLights change the global light count and trigger
+            // expensive shader recompiles as traffic spawns. Emissive meshes
+            // and the shared glow cloud retain the visible headlight effect.
+            enableDynamicLights: false
         });
         this.audioManager = new AudioManager();
         this.leaderboard = new LeaderboardManager();
@@ -262,8 +265,13 @@ class Game {
         // Show loading screen
         this.ui.showLoadingScreen('Loading Game...');
 
-        // Small delay for loading screen to render
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // Let the loading overlay paint, then compile pooled-object shaders
+        // before gameplay so the first car/newt appearance cannot stall a frame.
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (!this.shaderWarmupPromise) {
+            this.shaderWarmupPromise = this.compileSceneShaders();
+        }
+        await this.shaderWarmupPromise;
 
         // Show click to start screen (allows proper pointer lock on desktop)
         this.ui.showClickToStartScreen();
@@ -433,8 +441,8 @@ class Game {
         // Clear predator
         this.predatorManager.reset();
 
-        // Small delay before starting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Compile the new level while its loading overlay is still visible.
+        await this.compileSceneShaders();
 
         // Hide loading screen
         this.ui.hideLoadingScreen();
@@ -449,6 +457,15 @@ class Game {
 
         // Set state back to playing
         this.state = 'playing';
+    }
+
+    async compileSceneShaders() {
+        try {
+            await this.renderer.compileAsync(this.scene, this.camera);
+        } catch (error) {
+            console.warn('Async shader warmup failed; using synchronous fallback.', error);
+            this.renderer.compile(this.scene, this.camera);
+        }
     }
 
     gameOver(reason) {

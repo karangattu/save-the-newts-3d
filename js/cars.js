@@ -1019,8 +1019,6 @@ export class CarManager {
     }
 
     addHeadlights(group, zPos, yPos = 0.7) {
-        if (!this.enableDynamicLights) return;
-
         const headlightGeo = new THREE.SphereGeometry(0.13, 8, 8);
 
         const leftHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
@@ -1032,7 +1030,7 @@ export class CarManager {
         group.add(rightHeadlight);
 
         // Only add a single SpotLight on high quality (not one per headlight)
-        if (this.qualityLevel >= 2) {
+        if (this.enableDynamicLights && this.qualityLevel >= 2) {
             const light = new THREE.SpotLight(0xffffee, 2.5, 25, 0.5, 0.6);
             light.position.set(0, yPos, zPos);
             light.target.position.set(0, 0, zPos + 20);
