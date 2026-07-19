@@ -10,6 +10,11 @@ export class AudioManager {
         // Ambient nodes
         this.ambientNodes = [];
         this.cricketInterval = null;
+
+        // Background soundtrack
+        this.backgroundTrack = new Audio('assets/background_track.mp3');
+        this.backgroundTrack.loop = true;
+        this.backgroundTrack.volume = 0.12;
         
         // Low battery warning
         this.lowBatteryOscillator = null;
@@ -38,6 +43,10 @@ export class AudioManager {
     startAmbient(level = 1) {
         if (!this.isInitialized) return;
         console.log("AudioManager.startAmbient() - level:", level);
+
+        if (this.backgroundTrack.paused) {
+            this.backgroundTrack.play().catch(() => {});
+        }
 
         // Wind - low frequency filtered noise (all levels, louder in storm)
         this.createWindSound(level === 3 ? 0.12 : 0.05);
@@ -1021,6 +1030,8 @@ export class AudioManager {
     }
     
     stopAmbient() {
+        this.backgroundTrack.pause();
+
         // Stop ambient oscillators
         this.ambientNodes.forEach(node => {
             try {
