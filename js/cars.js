@@ -90,7 +90,7 @@ export class CarManager {
     // One Points cloud for every vehicle light halo => 2 extra draw calls total
     // instead of per-car sprites.
     initLightGlows() {
-        const maxPoints = 32 * 2; // generous capacity, draw range trims it
+        const maxPoints = 32 * 3; // two headlights and one taillight per vehicle
         this.lightGlowPositions = new Float32Array(maxPoints * 3);
         const colors = new Float32Array(maxPoints * 3);
         const geometry = new THREE.BufferGeometry();
@@ -1208,7 +1208,7 @@ export class CarManager {
         const maxPoints = positions.length / 3;
         let idx = 0;
 
-        for (let i = 0; i < this.cars.length && idx + 2 <= maxPoints; i++) {
+        for (let i = 0; i < this.cars.length; i++) {
             const car = this.cars[i];
             if (car.isStealth) continue;
 
@@ -1218,20 +1218,26 @@ export class CarManager {
             const frontZ = isSemi ? 4.3 : (isMoto ? 1.2 : 2.3);
             const backZ = isSemi ? -6.5 : (isMoto ? -0.95 : -2.3);
             const y = isSemi ? 0.9 : 0.7;
+            const headlightOffsets = isMoto ? [0] : [-0.62, 0.62];
+            if (idx + headlightOffsets.length + 1 > maxPoints) break;
 
-            // Headlight halo (warm white) — at the car's local front
-            positions[idx * 3] = mesh.position.x + Math.sin(mesh.rotation.y) * frontZ;
-            positions[idx * 3 + 1] = y;
-            positions[idx * 3 + 2] = mesh.position.z + Math.cos(mesh.rotation.y) * frontZ;
-            colors[idx * 3] = 1.0;
-            colors[idx * 3 + 1] = 0.93;
-            colors[idx * 3 + 2] = 0.75;
-            idx++;
+            // Headlight halos (warm white) — at the car's local front corners
+            const sin = Math.sin(mesh.rotation.y);
+            const cos = Math.cos(mesh.rotation.y);
+            for (const side of headlightOffsets) {
+                positions[idx * 3] = mesh.position.x + cos * side + sin * frontZ;
+                positions[idx * 3 + 1] = y;
+                positions[idx * 3 + 2] = mesh.position.z - sin * side + cos * frontZ;
+                colors[idx * 3] = 1.0;
+                colors[idx * 3 + 1] = 0.93;
+                colors[idx * 3 + 2] = 0.75;
+                idx++;
+            }
 
             // Taillight halo (red) — at the car's local rear
-            positions[idx * 3] = mesh.position.x + Math.sin(mesh.rotation.y) * backZ;
+            positions[idx * 3] = mesh.position.x + sin * backZ;
             positions[idx * 3 + 1] = y;
-            positions[idx * 3 + 2] = mesh.position.z + Math.cos(mesh.rotation.y) * backZ;
+            positions[idx * 3 + 2] = mesh.position.z + cos * backZ;
             colors[idx * 3] = 1.0;
             colors[idx * 3 + 1] = 0.12;
             colors[idx * 3 + 2] = 0.08;

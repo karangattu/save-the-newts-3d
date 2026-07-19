@@ -134,4 +134,31 @@ describe('CarManager logic', () => {
         // the rear-most part of the body (min Z, which is the rear bumper).
         expect(frontY).toBeLessThan(rearY);
     });
+
+    test('uses two rotated headlight glow points for Tesla-style cars', () => {
+        const manager = Object.create(CarManager.prototype);
+        const positions = new Float32Array(9);
+        const colors = new Float32Array(9);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setDrawRange = (start, count) => { geometry.drawRange = { start, count }; };
+        manager.lightGlowPositions = positions;
+        manager.lightGlows = { geometry };
+        manager.cars = [{
+            vehicleType: 'car',
+            isStealth: false,
+            mesh: { position: { x: 10, z: 20 }, rotation: { y: Math.PI / 2 } }
+        }];
+
+        manager.updateLightGlows();
+
+        expect(geometry.drawRange.count).toBe(3);
+        expect(positions[0]).toBeCloseTo(12.3);
+        expect(positions[1]).toBeCloseTo(0.7);
+        expect(positions[2]).toBeCloseTo(20.62);
+        expect(positions[3]).toBeCloseTo(12.3);
+        expect(positions[4]).toBeCloseTo(0.7);
+        expect(positions[5]).toBeCloseTo(19.38);
+    });
 });
