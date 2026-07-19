@@ -81,6 +81,47 @@ export class UIManager {
         if (savedName && this.playerNameInput) {
             this.playerNameInput.value = savedName;
         }
+
+        // Setup fullscreen buttons (both start screen and floating bottom-right E2E button)
+        this.fullscreenStartBtn = document.getElementById('fullscreen-start-btn');
+        this.fullscreenBtn = document.getElementById('fullscreen-btn');
+
+        const toggleFullscreen = () => {
+            this.hapticLight();
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.error(`Error attempting to enable fullscreen: ${err.message} (${err.name})`);
+                });
+            } else {
+                document.exitFullscreen().catch(err => {
+                    console.error(`Error exiting fullscreen: ${err.message}`);
+                });
+            }
+        };
+
+        if (this.fullscreenStartBtn) {
+            this.fullscreenStartBtn.addEventListener('click', toggleFullscreen);
+        }
+        if (this.fullscreenBtn) {
+            this.fullscreenBtn.addEventListener('click', toggleFullscreen);
+        }
+
+        // Keep icons synchronized with fullscreen state
+        document.addEventListener('fullscreenchange', () => {
+            const iconClass = document.fullscreenElement ? 'fa-compress' : 'fa-expand';
+            if (this.fullscreenStartBtn) {
+                const icon = this.fullscreenStartBtn.querySelector('i');
+                if (icon) {
+                    icon.className = `fas ${iconClass}`;
+                }
+            }
+            if (this.fullscreenBtn) {
+                const icon = this.fullscreenBtn.querySelector('i');
+                if (icon) {
+                    icon.className = `fas ${iconClass}`;
+                }
+            }
+        });
     }
 
     detectMobile() {

@@ -10,6 +10,9 @@
     <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔦</text></svg>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/game.css">
 </head>
 
@@ -33,17 +36,50 @@
             <p class="subtitle">Rescue newts crossing the road.</p>
 
             <div class="instructions minimal">
-                <ul>
-                    <li><strong>Move</strong> WASD / Left Joystick</li>
-                    <li><strong>Look</strong> Mouse / Swipe Right Side</li>
-                    <li><strong>Flashlight</strong> F key / Light button</li>
-                    <li><strong>Rescue</strong> Walk over to a newt</li>
-                </ul>
-                <p class="micro-note">Avoid traffic. Battery refills on rescue. Toggle light to save battery!</p>
+                <div class="instructions-grid">
+                    <div class="instruction-card">
+                        <div class="card-icon"><i class="fas fa-arrows-alt"></i></div>
+                        <div class="card-info">
+                            <span class="action-label">Move</span>
+                            <span class="action-keys">
+                                <kbd class="keycap">W</kbd><kbd class="keycap">A</kbd><kbd class="keycap">S</kbd><kbd class="keycap">D</kbd>
+                                <span class="divider">/</span> Joystick
+                            </span>
+                        </div>
+                    </div>
+                    <div class="instruction-card">
+                        <div class="card-icon"><i class="fas fa-eye"></i></div>
+                        <div class="card-info">
+                            <span class="action-label">Look</span>
+                            <span class="action-keys">Mouse <span class="divider">/</span> Swipe</span>
+                        </div>
+                    </div>
+                    <div class="instruction-card">
+                        <div class="card-icon"><i class="fas fa-lightbulb"></i></div>
+                        <div class="card-info">
+                            <span class="action-label">Flashlight</span>
+                            <span class="action-keys">
+                                <kbd class="keycap">F</kbd>
+                                <span class="divider">/</span> Light Button
+                            </span>
+                        </div>
+                    </div>
+                    <div class="instruction-card">
+                        <div class="card-icon"><i class="fas fa-frog"></i></div>
+                        <div class="card-info">
+                            <span class="action-label">Rescue</span>
+                            <span class="action-keys">Walk over newts</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="tip-banner">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Avoid traffic. Battery refills on rescue. Toggle light to save battery!</span>
+                </div>
             </div>
 
             <div class="sound-notice">
-                <i class="fas fa-volume-up"></i>
+                <i class="fas fa-volume-up pulse-icon"></i>
                 <span>Turn on sound for best experience</span>
             </div>
 
