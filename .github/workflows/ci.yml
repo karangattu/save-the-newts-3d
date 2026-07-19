@@ -1,19 +1,21 @@
-name: Run tests
+name: CI
 
+# Tests always run first. Deploy to GitHub Pages only after they pass on main.
 permissions:
   contents: read
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    paths:
-      - 'js/**'
-      - 'tests/**'
-      - '.github/workflows/**'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  unit-tests:
+  test:
+    name: Test
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.58.2-jammy
@@ -27,96 +29,64 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         run: npm ci
 
+      - name: Unit tests
+        run: npm run test:unit
+
       - name: Start static server
         run: |
-          mkdir -p artifacts/unit-tests
-          npx http-server -p 3000 -c-1 > artifacts/unit-tests/server.log 2>&1 &
+          mkdir -p artifacts/playwright
+          npx http-server -p 3000 -c-1 > artifacts/playwright/server.log 2>&1 &
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 10000
 
-      - name: Run unit tests
-        id: unit_tests
-        continue-on-error: true
+      - name: Playwright tests
+        id: playwright
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p artifacts/unit-tests
-          npm run test 2>&1 | tee artifacts/unit-tests/output.log
-
-      - name: Upload unit test logs
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: unit-tests-log
-          path: artifacts/unit-tests
-          if-no-files-found: ignore
-
-      - name: Mark unit-tests job as failed
-        if: steps.unit_tests.outcome == 'failure'
-        run: exit 1
-
-  smoke:
-    needs: unit-tests
-    runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.58.2-jammy
-      options: --ipc=host
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install deps
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-        run: npm ci
-
-      - name: Start static server
-        run: |
-          mkdir -p artifacts/smoke
-          npx http-server -p 3000 -c-1 > artifacts/smoke/server.log 2>&1 &
-
-      - name: Wait for server
-        run: npx wait-on http://localhost:3000 --timeout 10000
-
-      - name: Run smoke tests (Playwright)
-        id: smoke_tests
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee artifacts/smoke/output.log
+          npm test 2>&1 | tee artifacts/playwright/output.log
         env:
           CI: true
 
-      - name: Upload smoke logs
+      - name: Upload Playwright logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-log
-          path: artifacts/smoke
+          name: playwright-log
+          path: artifacts/playwright
           if-no-files-found: ignore
 
-      - name: Mark smoke job as failed
-        if: steps.smoke_tests.outcome == 'failure'
-        run: exit 1
-
   deploy:
-    needs: smoke
+    name: Deploy to GitHub Pages
+    needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pages: write
       id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Upload site artifact
+      - name: Stage site files
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp -R css js assets _site/
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
