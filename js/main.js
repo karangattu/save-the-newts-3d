@@ -258,10 +258,13 @@ class Game {
 
     showIntroVideo() {
         // Show the intro video screen
+        this.audioManager.startVideoMusic();
         this.ui.showVideoScreen();
     }
 
     async startGameWithLoading() {
+        this.audioManager.stopVideoMusic();
+
         // Show loading screen
         this.ui.showLoadingScreen('Loading Game...');
 

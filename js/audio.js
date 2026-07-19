@@ -15,6 +15,11 @@ export class AudioManager {
         this.backgroundTrack = new Audio('assets/background_track.mp3');
         this.backgroundTrack.loop = true;
         this.backgroundTrack.volume = 0.12;
+
+        // Intro video music
+        this.videoMusic = new Audio('assets/video_music.mp3');
+        this.videoMusic.loop = true;
+        this.videoMusic.volume = 0.15;
         
         // Low battery warning
         this.lowBatteryOscillator = null;
@@ -71,6 +76,16 @@ export class AudioManager {
             this.createRainSound();
             this.createStormWind();
         }
+    }
+
+    startVideoMusic() {
+        this.videoMusic.currentTime = 0;
+        this.videoMusic.play().catch(() => {});
+    }
+
+    stopVideoMusic() {
+        this.videoMusic.pause();
+        this.videoMusic.currentTime = 0;
     }
     
     startFrogCroaking() {
