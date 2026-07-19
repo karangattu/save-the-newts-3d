@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import * as THREE from 'three';
 import { CarManager } from '../../js/cars.js';
 
 describe('CarManager logic', () => {
@@ -76,5 +77,61 @@ describe('CarManager logic', () => {
         expect(manager.lastNearMiss).toBe(0);
 
         expect(manager.checkNearMiss(nearMissBox, collisionBox)).toBeNull();
+    });
+
+    test('Tesla car body mesh has correct forward orientation (front is at positive Z, rear is at negative Z)', () => {
+        const manager = Object.create(CarManager.prototype);
+        manager.sharedMaterials = {
+            glass: new THREE.MeshBasicMaterial(),
+            glassStealth: new THREE.MeshBasicMaterial(),
+            rubber: new THREE.MeshBasicMaterial(),
+            chrome: new THREE.MeshBasicMaterial(),
+            headlightOff: new THREE.MeshBasicMaterial(),
+            headlightGlow: new THREE.MeshBasicMaterial(),
+            turnSignal: new THREE.MeshBasicMaterial(),
+            taillightOff: new THREE.MeshBasicMaterial(),
+            taillightOn: new THREE.MeshBasicMaterial(),
+            wheel: new THREE.MeshBasicMaterial(),
+            hubcap: new THREE.MeshBasicMaterial(),
+            seatBlack: new THREE.MeshBasicMaterial(),
+            mirror: new THREE.MeshBasicMaterial()
+        };
+
+        const group = manager.createCarMesh(false);
+
+        const bodyMesh = group.children.find(child => child.geometry && child.geometry.type === 'ExtrudeGeometry');
+        expect(bodyMesh).toBeDefined();
+
+        const geometry = bodyMesh.geometry;
+        const positionAttr = geometry.attributes.position;
+        expect(positionAttr).toBeDefined();
+
+        let maxZ = -Infinity;
+        let minZ = Infinity;
+        let maxZIndex = -1;
+        let minZIndex = -1;
+
+        for (let i = 0; i < positionAttr.count; i++) {
+            const z = positionAttr.getZ(i);
+            if (z > maxZ) {
+                maxZ = z;
+                maxZIndex = i;
+            }
+            if (z < minZ) {
+                minZ = z;
+                minZIndex = i;
+            }
+        }
+
+        expect(maxZIndex).not.toBe(-1);
+        expect(minZIndex).not.toBe(-1);
+
+        const frontY = positionAttr.getY(maxZIndex);
+        const rearY = positionAttr.getY(minZIndex);
+
+        // Under correct orientation:
+        // The front-most part of the body (max Z, which is the front lip) should be lower than
+        // the rear-most part of the body (min Z, which is the rear bumper).
+        expect(frontY).toBeLessThan(rearY);
     });
 });

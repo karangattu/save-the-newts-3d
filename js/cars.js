@@ -288,7 +288,7 @@ export class CarManager {
             curveSegments: 1
         });
         // Shape XY = length/height, extrude Z = width → map to X=width, Y=height, Z=length
-        geo.rotateY(Math.PI / 2);
+        geo.rotateY(-Math.PI / 2);
         geo.computeBoundingBox();
         const bb = geo.boundingBox;
         geo.translate(
