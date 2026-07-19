@@ -1,5 +1,8 @@
 name: Run tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ main ]
@@ -98,3 +101,22 @@ jobs:
         if: steps.smoke_tests.outcome == 'failure'
         run: exit 1
 
+  deploy:
+    needs: smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
