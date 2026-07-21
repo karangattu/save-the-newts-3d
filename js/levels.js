@@ -41,7 +41,8 @@ export class LevelManager {
         this.splashParticles = [];
         this.puddlePositions = [];
 
-        // Moths (SF-realistic, not fireflies)
+        // Western Toads & Moths
+        this.westernToads = [];
         this.moths = [];
 
         // Textures created for the active level (disposed on clear)
@@ -58,7 +59,7 @@ export class LevelManager {
     setQualityLevel(level) {
         this.qualityLevel = Math.max(1, Math.min(3, level | 0));
 
-        if (this.qualityLevel <= 1) {
+        if (this.qualityLevel === 1) {
             this.rainUpdateInterval = 5;
             this.rainActiveFraction = 0.45;
         } else if (this.qualityLevel === 2) {
@@ -169,6 +170,7 @@ export class LevelManager {
         
         this.splashParticles.forEach(splash => this.scene.remove(splash));
         this.splashParticles = [];
+        this.westernToads = [];
         this.moths = [];
         this.mothBodies = null;
         this.mothLeftWings = null;
@@ -1013,32 +1015,66 @@ export class LevelManager {
         this.updateMoths(0);
     }
 
-    createBananaSlugs(count = 8) {
+    createWesternToads(count = 8) {
         count = this.getScaledCount(count);
         for (let i = 0; i < count; i++) {
-            const slugGroup = new THREE.Group();
-            const body = new THREE.Mesh(
-                new THREE.CapsuleGeometry(0.03, 0.15, 4, 8),
-                new THREE.MeshStandardMaterial({ color: 0xcccc00, roughness: 0.3, metalness: 0.1 })
-            );
-            body.rotation.z = Math.PI / 2;
-            body.position.y = 0.03;
-            slugGroup.add(body);
+            const toadGroup = new THREE.Group();
 
-            const antMat = new THREE.MeshStandardMaterial({ color: 0xaaaa00 });
-            const antGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.04, 4);
-            [0.01, -0.01].forEach(zOff => {
-                const ant = new THREE.Mesh(antGeo, antMat);
-                ant.position.set(0.09, 0.06, zOff);
-                ant.rotation.z = -0.3;
-                slugGroup.add(ant);
+            // Body (olive green / brownish speckled toad body)
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a5d32, roughness: 0.8, metalness: 0.05 });
+            const body = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 8, 8),
+                bodyMat
+            );
+            body.scale.set(1.2, 0.8, 1.4);
+            body.position.y = 0.07;
+            toadGroup.add(body);
+
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(0.07, 8, 8),
+                bodyMat
+            );
+            head.scale.set(1.0, 0.7, 0.9);
+            head.position.set(0, 0.08, 0.1);
+            toadGroup.add(head);
+
+            // Eyes
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+            [-0.04, 0.04].forEach(xOff => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), eyeMat);
+                eye.position.set(xOff, 0.12, 0.14);
+                toadGroup.add(eye);
             });
 
+            // Yellow/cream stripe along the back characteristic of Western Toads
+            const stripeMat = new THREE.MeshStandardMaterial({ color: 0xc8bc7d, roughness: 0.7 });
+            const stripe = new THREE.Mesh(
+                new THREE.BoxGeometry(0.015, 0.02, 0.22),
+                stripeMat
+            );
+            stripe.position.set(0, 0.12, -0.01);
+            toadGroup.add(stripe);
+
             const side = Math.random() > 0.5 ? -1 : 1;
-            slugGroup.position.set(side * (7 + Math.random() * 3), 0, (Math.random() - 0.5) * 240);
-            slugGroup.rotation.y = Math.random() * Math.PI * 2;
-            this.scene.add(slugGroup);
-            this.levelObjects.push(slugGroup);
+            const startX = side * (7 + Math.random() * 3);
+            const startZ = (Math.random() - 0.5) * 240;
+            const direction = Math.random() * Math.PI * 2;
+
+            toadGroup.position.set(startX, 0, startZ);
+            toadGroup.rotation.y = direction;
+            this.scene.add(toadGroup);
+            this.levelObjects.push(toadGroup);
+
+            this.westernToads.push({
+                group: toadGroup,
+                speed: 0.3 + Math.random() * 0.4,
+                hopFreq: 2 + Math.random() * 2,
+                direction: direction,
+                phase: Math.random() * Math.PI * 2,
+                minZ: -120,
+                maxZ: 120
+            });
         }
     }
 
@@ -1053,7 +1089,7 @@ export class LevelManager {
         this.createEnvironmentLayers();
         this.createTrees(100, -1);
         this.createUnderbrush(50);
-        this.createBananaSlugs(6);
+        this.createWesternToads(6);
         this.createMoths(15);
         this.placeRoadSigns();
         this.createStars();
@@ -1100,7 +1136,7 @@ export class LevelManager {
         this.createEnvironmentLayers();
         this.createTrees(120, -1);
         this.createUnderbrush(60);
-        this.createBananaSlugs(10);
+        this.createWesternToads(10);
         this.createMoths(25);
         this.placeRoadSigns();
         this.createDuskSky();
@@ -1422,6 +1458,36 @@ export class LevelManager {
         this.mothBodies.instanceMatrix.needsUpdate = true;
         this.mothLeftWings.instanceMatrix.needsUpdate = true;
         this.mothRightWings.instanceMatrix.needsUpdate = true;
+    }
+
+    updateWesternToads(deltaTime) {
+        if (!this.westernToads || this.westernToads.length === 0) return;
+
+        for (let i = 0; i < this.westernToads.length; i++) {
+            const toad = this.westernToads[i];
+            toad.phase += deltaTime * toad.hopFreq;
+
+            // Move forward based on direction
+            const dx = Math.sin(toad.direction) * toad.speed * deltaTime;
+            const dz = Math.cos(toad.direction) * toad.speed * deltaTime;
+
+            toad.group.position.x += dx;
+            toad.group.position.z += dz;
+
+            // Hop arc height animation
+            const hopHeight = Math.max(0, Math.sin(toad.phase)) * 0.12;
+            toad.group.position.y = hopHeight;
+
+            // Wrap Z or steer away if wandering too far off-road margins
+            if (toad.group.position.z < toad.minZ) toad.group.position.z = toad.maxZ;
+            if (toad.group.position.z > toad.maxZ) toad.group.position.z = toad.minZ;
+
+            // Turn around slightly when reaching bounds on sides
+            if (Math.abs(toad.group.position.x) > 16 || Math.abs(toad.group.position.x) < 5) {
+                toad.direction += Math.PI * 0.8;
+                toad.group.rotation.y = toad.direction;
+            }
+        }
     }
     
     precomputeRoadData() {

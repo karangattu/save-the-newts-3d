@@ -51,4 +51,35 @@ describe('LevelManager logic', () => {
         manager.currentLevel = 3;
         expect(manager.getWindStrength()).toBe(0.9);
     });
+
+    test('createWesternToads creates toad objects in levelObjects and scene', () => {
+        const manager = Object.create(LevelManager.prototype);
+        manager.scene = { add: () => {} };
+        manager.levelObjects = [];
+        manager.westernToads = [];
+        manager.getScaledCount = (c) => c;
+
+        manager.createWesternToads(4);
+        expect(manager.levelObjects.length).toBe(4);
+        expect(manager.westernToads.length).toBe(4);
+        expect(manager.createBananaSlugs).toBeUndefined();
+    });
+
+    test('updateWesternToads advances toad position and hop height', () => {
+        const manager = Object.create(LevelManager.prototype);
+        const group = { position: { x: 0, y: 0, z: 0 }, rotation: { y: 0 } };
+        manager.westernToads = [{
+            group,
+            speed: 1,
+            hopFreq: 2,
+            direction: 0,
+            phase: 0,
+            minZ: -100,
+            maxZ: 100
+        }];
+
+        manager.updateWesternToads(0.5);
+        expect(group.position.z).toBeGreaterThan(0);
+        expect(group.position.y).toBeGreaterThan(0);
+    });
 });

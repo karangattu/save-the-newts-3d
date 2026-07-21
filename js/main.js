@@ -530,8 +530,9 @@ class Game {
         this.levelManager.updateRain(deltaTime, this.player.getPosition());
         this.levelManager.updateSplashes(deltaTime, this.player.getPosition());
 
-        // Update moths
+        // Update moths and toads
         this.levelManager.updateMoths(deltaTime);
+        this.levelManager.updateWesternToads(deltaTime);
 
         // Update player
         const isMoving = this.player.update(deltaTime);
