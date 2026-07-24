@@ -95,6 +95,7 @@ export class LevelManager {
             : 0;
 
         this.currentLevel = levelNum;
+        document.body.dataset.level = String(levelNum);
         this.clearLevel();
         
         if (levelNum === 1) {
@@ -320,6 +321,24 @@ export class LevelManager {
         const dashW = Math.max(2.5, (0.15 / 12) * 256);
         ctx.fillStyle = wetness > 0 ? 'rgba(200,160,30,0.8)' : 'rgba(255,204,0,0.92)';
         ctx.fillRect(128 - dashW / 2, 0, dashW, 256);
+
+        // Baked wear: faint repair strip, skid marks, and aggregate shadows.
+        // These add visual richness without extra meshes or draw calls.
+        ctx.fillStyle = wetness > 0 ? 'rgba(80,95,110,0.16)' : 'rgba(110,110,105,0.12)';
+        ctx.fillRect(86, 0, 18, 512);
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        ctx.fillRect(42, 120, 8, 190);
+        ctx.fillRect(205, 350, 7, 125);
+        ctx.strokeStyle = 'rgba(210,210,200,0.18)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+            const y = 55 + i * 105;
+            ctx.beginPath();
+            ctx.moveTo(25, y);
+            ctx.lineTo(65, y + 4);
+            ctx.lineTo(100, y - 2);
+            ctx.stroke();
+        }
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
@@ -668,6 +687,7 @@ export class LevelManager {
 
         this.createRoadReflectors(roadWidth);
         this.createDelineatorPosts(roadWidth);
+        this.createRoadsideDecals();
 
         const roadLength = 300;
         this.roadBounds = {
@@ -677,6 +697,35 @@ export class LevelManager {
             maxZ: roadLength / 2 - 10
         };
         this.dangerZones = { forest: -12, cliff: 14 };
+    }
+
+    // A few shared, low-poly roadside props provide scale and navigation cues.
+    // Instancing keeps this to two draw calls and they are reused every level.
+    createRoadsideDecals() {
+        const count = this.getScaledCount(10);
+        const geo = new THREE.BoxGeometry(0.08, 0.7, 0.35);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xd85b27,
+            emissive: 0x481508,
+            emissiveIntensity: 0.45,
+            roughness: 0.75
+        });
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        const matrix = new THREE.Matrix4();
+        const pos = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
+        const scale = new THREE.Vector3(1, 1, 1);
+        for (let i = 0; i < count; i++) {
+            const data = this.getRoadDataAtT(0.05 + (i / count) * 0.9);
+            pos.copy(data.point).addScaledVector(data.normal, 7.2 + (i % 2) * 0.6);
+            pos.y = 0.35;
+            quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(data.tangent.x, data.tangent.z));
+            matrix.compose(pos, quat, scale);
+            mesh.setMatrixAt(i, matrix);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        this.scene.add(mesh);
+        this.levelObjects.push(mesh);
     }
 
     // Raised pavement markers ("Botts' dots") along both edge lines — they catch
@@ -873,8 +922,28 @@ export class LevelManager {
         }
         ridges.instanceMatrix.needsUpdate = true;
 
-        this.scene.add(rocks, ridges);
-        this.levelObjects.push(rocks, ridges);
+        // A second, very distant tree-line silhouette makes the road feel less
+        // like a corridor. Flat cones are enough at this distance.
+        const silhouetteCount = this.getScaledCount(18);
+        const silhouetteGeo = new THREE.ConeGeometry(1, 1, 5);
+        const silhouetteMat = new THREE.MeshBasicMaterial({
+            color: this.currentLevel === 2 ? 0x1b1020 : 0x080d16,
+            fog: true
+        });
+        const silhouettes = new THREE.InstancedMesh(silhouetteGeo, silhouetteMat, silhouetteCount);
+        for (let i = 0; i < silhouetteCount; i++) {
+            const data = this.getRoadDataAtT((i + 0.5) / silhouetteCount);
+            pos.copy(data.point).addScaledVector(data.normal, 72 + (i % 3) * 8);
+            const height = 10 + (i % 5) * 2.5;
+            pos.y = height * 0.5 - 3;
+            scale.set(7 + (i % 4), height, 7 + (i % 3));
+            matrix.compose(pos, quat.identity(), scale);
+            silhouettes.setMatrixAt(i, matrix);
+        }
+        silhouettes.instanceMatrix.needsUpdate = true;
+
+        this.scene.add(rocks, ridges, silhouettes);
+        this.levelObjects.push(rocks, ridges, silhouettes);
     }
 
     createTrees(count, side) {

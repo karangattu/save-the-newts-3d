@@ -35,6 +35,8 @@ class Game {
         this.frameTimeAverage = 1000 / 60;
         this.qualitySampleFrames = 0;
         this.lastQualityChange = 0;
+        this.cameraBobOffset = 0;
+        this.cameraEffectTime = 0;
 
         // High score
         this.highScore = parseInt(localStorage.getItem('newtRescueHighScore')) || 0;
@@ -536,6 +538,7 @@ class Game {
 
         // Update player
         const isMoving = this.player.update(deltaTime);
+        this.applyCameraEffects(deltaTime, isMoving);
 
         // Play footsteps if moving
         if (isMoving) {
@@ -639,6 +642,19 @@ class Game {
         // Update UI
         this.ui.updateBattery(this.flashlight.getBattery());
         this.ui.updateTime(this.elapsedTime);
+    }
+
+    applyCameraEffects(deltaTime, isMoving) {
+        this.cameraEffectTime += deltaTime;
+        const intensity = isMoving ? 1 : 0.25;
+        const bob = isMoving
+            ? Math.sin(this.cameraEffectTime * 9) * 0.025 + Math.sin(this.cameraEffectTime * 18) * 0.01
+            : 0;
+        this.camera.position.y += bob - this.cameraBobOffset;
+        this.cameraBobOffset = bob;
+
+        const stormLean = this.currentLevel === 3 ? Math.sin(this.cameraEffectTime * 0.65) * 0.008 : 0;
+        this.camera.rotation.z = Math.sin(this.cameraEffectTime * 4.5) * 0.003 * intensity + stormLean;
     }
 
     checkDangerZones() {
