@@ -137,4 +137,51 @@ test.describe('Gamepad controller support', () => {
 
         expect(result.rotationChanged).toBeTruthy();
     });
+
+    test('Camera orientation order is YXZ and never goes upside down during 180 degree rotation or extreme pitch', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const result = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { Player } = await import('/js/player.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.25, 600);
+            const roadBounds = { minX: -20, maxX: 20, minZ: -150, maxZ: 150 };
+            const player = new Player(camera, scene, roadBounds, false);
+
+            const initialOrder = camera.rotation.order;
+            const initialUpY = camera.up.y;
+
+            // Simulate turning 180 degrees horizontally
+            camera.rotation.y = Math.PI;
+            player.update(0.016);
+            const yaw180UpVector = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+            // Simulate extreme pitch up & down
+            camera.rotation.x = 3.0; // Extreme pitch
+            camera.rotation.z = 2.0; // Extreme roll attempt
+            player.update(0.016);
+
+            const clampedPitch = camera.rotation.x;
+            const clampedRoll = camera.rotation.z;
+            const finalUpVector = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+            return {
+                initialOrder,
+                initialUpY,
+                yaw180UpY: yaw180UpVector.y,
+                clampedPitch,
+                clampedRoll,
+                finalUpY: finalUpVector.y
+            };
+        });
+
+        expect(result.initialOrder).toBe('YXZ');
+        expect(result.initialUpY).toBe(1);
+        expect(result.yaw180UpY).toBeGreaterThan(0.99); // Camera stays upright after 180 turn
+        expect(result.clampedPitch).toBeLessThanOrEqual(Math.PI / 2);
+        expect(result.clampedRoll).toBeLessThan(0.2); // Roll strictly bounded
+        expect(result.finalUpY).toBeGreaterThan(0); // Up vector remains positive (never inverted upside down)
+    });
 });

@@ -71,6 +71,8 @@ class Game {
             0.25,
             600
         );
+        this.camera.rotation.order = 'YXZ';
+        this.camera.up.set(0, 1, 0);
         this.camera.position.set(0, 1.7, 0);
 
         this.renderer = new THREE.WebGLRenderer({

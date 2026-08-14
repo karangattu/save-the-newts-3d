@@ -43,9 +43,14 @@ export class Player {
         this.gamepadFlashlightPressed = false;
         this.gamepadLookSensitivity = 2.5;
 
+        this.camera.rotation.order = 'YXZ';
+        this.camera.up.set(0, 1, 0);
+
         // Pointer lock controls (desktop only)
         if (!isMobile) {
             this.controls = new PointerLockControls(camera, document.body);
+            this.controls.minPolarAngle = 0.08;
+            this.controls.maxPolarAngle = Math.PI - 0.08;
         }
 
         this.initGamepadListeners();
@@ -95,10 +100,12 @@ export class Player {
         this.gamepadMoveY = applyDeadZone(gp.axes[3]);
 
         if (this.gamepadLookX !== 0 || this.gamepadLookY !== 0) {
-            this.euler.setFromQuaternion(this.camera.quaternion);
+            this.euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
             this.euler.y -= this.gamepadLookX * this.gamepadLookSensitivity * deltaTime;
             this.euler.x -= this.gamepadLookY * this.gamepadLookSensitivity * deltaTime;
-            this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
+            const maxPitch = Math.PI / 2 - 0.05;
+            this.euler.x = Math.max(-maxPitch, Math.min(maxPitch, this.euler.x));
+            this.euler.z = 0;
             this.camera.quaternion.setFromEuler(this.euler);
         }
 
@@ -187,12 +194,14 @@ export class Player {
                 const dy = touch.clientY - lastTouch.y;
 
                 // Update camera rotation
-                this.euler.setFromQuaternion(this.camera.quaternion);
+                this.euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
                 this.euler.y -= dx * this.lookSensitivity;
                 this.euler.x -= dy * this.lookSensitivity;
 
-                // Clamp vertical look
-                this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
+                // Clamp vertical look to prevent inversion
+                const maxPitch = Math.PI / 2 - 0.05;
+                this.euler.x = Math.max(-maxPitch, Math.min(maxPitch, this.euler.x));
+                this.euler.z = 0;
 
                 this.camera.quaternion.setFromEuler(this.euler);
 
@@ -299,7 +308,17 @@ export class Player {
         };
     }
 
+    enforceUprightOrientation() {
+        if (!this.camera) return;
+        const maxPitch = Math.PI / 2 - 0.05;
+        this.camera.rotation.x = Math.max(-maxPitch, Math.min(maxPitch, this.camera.rotation.x));
+        this.camera.rotation.z = Math.max(-0.15, Math.min(0.15, this.camera.rotation.z));
+        this.camera.rotation.order = 'YXZ';
+        this.camera.up.set(0, 1, 0);
+    }
+
     update(deltaTime) {
+        this.enforceUprightOrientation();
         this.pollGamepad(deltaTime);
 
         if (!this.isMobile && !this.controls.isLocked && this.gamepadIndex < 0) return false;
@@ -362,12 +381,20 @@ export class Player {
         // Keep at player height
         this.camera.position.y = this.playerHeight;
 
+        // Prevent camera flipping or roll accumulation
+        const maxPitch = Math.PI / 2 - 0.05;
+        this.camera.rotation.x = Math.max(-maxPitch, Math.min(maxPitch, this.camera.rotation.x));
+        this.camera.rotation.z = Math.max(-0.15, Math.min(0.15, this.camera.rotation.z));
+        this.camera.rotation.order = 'YXZ';
+
         return isMoving;
     }
 
     reset() {
         this.camera.position.set(0, this.playerHeight, 0);
         this.camera.rotation.set(0, 0, 0);
+        this.camera.rotation.order = 'YXZ';
+        this.camera.up.set(0, 1, 0);
         this.velocity.set(0, 0, 0);
         this.moveForward = false;
         this.moveBackward = false;
