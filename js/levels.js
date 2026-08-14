@@ -274,77 +274,72 @@ export class LevelManager {
     // of road (texture repeats along its length), so paint one dash per tile.
     createAsphaltTexture(wetness = 0) {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 512;
+        canvas.width = 512;
+        canvas.height = 1024;
         const ctx = canvas.getContext('2d');
 
-        // Base asphalt
         const base = wetness > 0 ? 18 : 26;
         ctx.fillStyle = `rgb(${base},${base},${base + 2})`;
-        ctx.fillRect(0, 0, 256, 512);
+        ctx.fillRect(0, 0, 512, 1024);
 
-        // Aggregate speckle
-        for (let i = 0; i < 2600; i++) {
+        for (let i = 0; i < 5000; i++) {
             const g = base + (Math.random() * 28 - 10);
             ctx.fillStyle = `rgba(${g | 0},${g | 0},${(g + 3) | 0},${0.35 + Math.random() * 0.4})`;
-            ctx.fillRect(Math.random() * 256, Math.random() * 512, 1.5, 1.5);
+            ctx.fillRect(Math.random() * 512, Math.random() * 1024, 1.5, 1.5);
         }
 
-        // Darker tire-polished wheel tracks (lanes at ±3m, wheels ~±0.8m apart)
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
         [[0.155, 0.075], [0.27, 0.075], [0.655, 0.075], [0.77, 0.075]].forEach(([u, w]) => {
-            ctx.fillRect(u * 256, 0, w * 256, 512);
+            ctx.fillRect(u * 512, 0, w * 512, 1024);
         });
 
-        // Occasional cracks / tar snakes
         ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-        ctx.lineWidth = 1.2;
-        for (let i = 0; i < 5; i++) {
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
             ctx.beginPath();
-            let x = Math.random() * 256;
-            ctx.moveTo(x, Math.random() * 512);
+            let x = Math.random() * 512;
+            ctx.moveTo(x, Math.random() * 1024);
             for (let s = 0; s < 6; s++) {
-                x += (Math.random() - 0.5) * 30;
-                ctx.lineTo(x, Math.random() * 512);
+                x += (Math.random() - 0.5) * 50;
+                ctx.lineTo(x, Math.random() * 1024);
             }
             ctx.stroke();
         }
 
-        // White edge lines (0.5m in from each 6m edge => u = 0.5/12)
-        const edgeU = (0.5 / 12) * 256;
-        const lineW = Math.max(2, (0.15 / 12) * 256);
-        ctx.fillStyle = wetness > 0 ? 'rgba(220,220,215,0.85)' : 'rgba(235,235,230,0.95)';
-        ctx.fillRect(edgeU - lineW / 2, 0, lineW, 512);
-        ctx.fillRect(256 - edgeU - lineW / 2, 0, lineW, 512);
+        const edgeU = (0.5 / 12) * 512;
+        const lineW = Math.max(3, (0.15 / 12) * 512);
+        ctx.fillStyle = wetness > 0 ? 'rgba(220,220,215,0.9)' : 'rgba(240,240,235,0.96)';
+        ctx.fillRect(edgeU - lineW / 2, 0, lineW, 1024);
+        ctx.fillRect(512 - edgeU - lineW / 2, 0, lineW, 1024);
 
-        // Yellow center dash: 7.5m dash inside the 15m tile
-        const dashW = Math.max(2.5, (0.15 / 12) * 256);
-        ctx.fillStyle = wetness > 0 ? 'rgba(200,160,30,0.8)' : 'rgba(255,204,0,0.92)';
-        ctx.fillRect(128 - dashW / 2, 0, dashW, 256);
+        const dashW = Math.max(4, (0.15 / 12) * 512);
+        ctx.fillStyle = wetness > 0 ? 'rgba(210,170,30,0.85)' : 'rgba(255,208,0,0.95)';
+        ctx.fillRect(256 - dashW / 2, 0, dashW, 512);
 
-        // Baked wear: faint repair strip, skid marks, and aggregate shadows.
-        // These add visual richness without extra meshes or draw calls.
         ctx.fillStyle = wetness > 0 ? 'rgba(80,95,110,0.16)' : 'rgba(110,110,105,0.12)';
-        ctx.fillRect(86, 0, 18, 512);
+        ctx.fillRect(172, 0, 36, 1024);
         ctx.fillStyle = 'rgba(0,0,0,0.12)';
-        ctx.fillRect(42, 120, 8, 190);
-        ctx.fillRect(205, 350, 7, 125);
+        ctx.fillRect(84, 240, 16, 380);
+        ctx.fillRect(410, 700, 14, 250);
         ctx.strokeStyle = 'rgba(210,210,200,0.18)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         for (let i = 0; i < 4; i++) {
-            const y = 55 + i * 105;
+            const y = 110 + i * 210;
             ctx.beginPath();
-            ctx.moveTo(25, y);
-            ctx.lineTo(65, y + 4);
-            ctx.lineTo(100, y - 2);
+            ctx.moveTo(50, y);
+            ctx.lineTo(130, y + 8);
+            ctx.lineTo(200, y - 4);
             ctx.stroke();
         }
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(1, 20); // 300m road / 15m tile
-        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.repeat.set(1, 20);
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
         texture.colorSpace = THREE.SRGBColorSpace;
         this._levelTextures.push(texture);
         return texture;
@@ -352,32 +347,30 @@ export class LevelManager {
 
     createGrassTexture() {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
+        canvas.width = 512;
+        canvas.height = 512;
         const ctx = canvas.getContext('2d');
 
         ctx.fillStyle = '#0a160a';
-        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillRect(0, 0, 512, 512);
 
-        // Mottled patches
-        for (let i = 0; i < 900; i++) {
+        for (let i = 0; i < 1800; i++) {
             const g = 14 + Math.random() * 22;
             ctx.fillStyle = `rgba(${(g * 0.5) | 0},${g | 0},${(g * 0.45) | 0},${0.25 + Math.random() * 0.5})`;
-            const r = 2 + Math.random() * 7;
+            const r = 3 + Math.random() * 10;
             ctx.beginPath();
-            ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, Math.PI * 2);
+            ctx.arc(Math.random() * 512, Math.random() * 512, r, 0, Math.PI * 2);
             ctx.fill();
         }
 
-        // Grass blade strokes
-        ctx.strokeStyle = 'rgba(30,52,26,0.5)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 700; i++) {
-            const x = Math.random() * 256;
-            const y = Math.random() * 256;
+        ctx.strokeStyle = 'rgba(34,60,30,0.6)';
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 1400; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
             ctx.beginPath();
             ctx.moveTo(x, y);
-            ctx.lineTo(x + (Math.random() - 0.5) * 3, y - 2 - Math.random() * 4);
+            ctx.lineTo(x + (Math.random() - 0.5) * 5, y - 3 - Math.random() * 6);
             ctx.stroke();
         }
 
@@ -385,7 +378,10 @@ export class LevelManager {
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         texture.repeat.set(8, 30);
-        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
         texture.colorSpace = THREE.SRGBColorSpace;
         this._levelTextures.push(texture);
         return texture;
@@ -393,32 +389,33 @@ export class LevelManager {
 
     createRockTexture() {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
+        canvas.width = 512;
+        canvas.height = 512;
         const ctx = canvas.getContext('2d');
 
         ctx.fillStyle = '#3d3a38';
-        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillRect(0, 0, 512, 512);
 
-        // Layered sediment bands
-        for (let y = 0; y < 256; y += 8 + Math.random() * 18) {
+        for (let y = 0; y < 512; y += 12 + Math.random() * 25) {
             const g = 45 + Math.random() * 30;
             ctx.fillStyle = `rgba(${g | 0},${(g * 0.95) | 0},${(g * 0.88) | 0},0.6)`;
-            ctx.fillRect(0, y, 256, 4 + Math.random() * 10);
+            ctx.fillRect(0, y, 512, 6 + Math.random() * 14);
         }
 
-        // Noise + vertical striations
-        for (let i = 0; i < 1200; i++) {
+        for (let i = 0; i < 2400; i++) {
             const g = 35 + Math.random() * 45;
             ctx.fillStyle = `rgba(${g | 0},${g | 0},${g | 0},${0.2 + Math.random() * 0.35})`;
-            ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2 + Math.random() * 8);
+            ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 3 + Math.random() * 12);
         }
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         texture.repeat.set(12, 2);
-        texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
         texture.colorSpace = THREE.SRGBColorSpace;
         this._levelTextures.push(texture);
         return texture;

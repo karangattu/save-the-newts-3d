@@ -8,25 +8,22 @@ function getWartyBumpMap() {
     if (wartyBumpMap) return wartyBumpMap;
 
     const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
+    canvas.width = 256;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
-    // Base height: middle gray (neutral)
     ctx.fillStyle = '#808080';
-    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillRect(0, 0, 256, 256);
 
-    // Create warty bumps (lighter gray = raised)
-    for (let i = 0; i < 250; i++) {
-        const x = Math.random() * 128;
-        const y = Math.random() * 128;
-        const radius = 1 + Math.random() * 3;
+    for (let i = 0; i < 500; i++) {
+        const x = Math.random() * 256;
+        const y = Math.random() * 256;
+        const radius = 1.5 + Math.random() * 4.5;
         
-        // Draw radial gradient for smooth bump
         const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
-        grad.addColorStop(0, '#d0d0d0'); // Raised peak
-        grad.addColorStop(0.4, '#b0b0b0');
-        grad.addColorStop(1, '#808080'); // Base flat level
+        grad.addColorStop(0, '#d8d8d8');
+        grad.addColorStop(0.45, '#b4b4b4');
+        grad.addColorStop(1, '#808080');
         
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -38,6 +35,9 @@ function getWartyBumpMap() {
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(3, 1.5);
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
     wartyBumpMap = texture;
     return wartyBumpMap;
 }

@@ -46,10 +46,12 @@ export class Flashlight {
         this.spotlight.distance = this.isMobile ? 80 : 85;
         this.spotlight.castShadow = !this.isMobile;
 
-        this.spotlight.shadow.mapSize.width = 512;
-        this.spotlight.shadow.mapSize.height = 512;
-        this.spotlight.shadow.camera.near = 1;
+        this.spotlight.shadow.mapSize.width = 1024;
+        this.spotlight.shadow.mapSize.height = 1024;
+        this.spotlight.shadow.camera.near = 0.5;
         this.spotlight.shadow.camera.far = 40;
+        this.spotlight.shadow.bias = -0.0001;
+        this.spotlight.shadow.normalBias = 0.02;
 
         this.camera.add(this.spotlight);
         this.spotlight.position.set(0, 0, 0);
@@ -212,7 +214,7 @@ export class Flashlight {
         const shadowEnabled = !this.isMobile && this.qualityLevel >= 2;
         this.spotlight.castShadow = shadowEnabled;
 
-        const shadowSize = this.qualityLevel <= 1 ? 256 : 512;
+        const shadowSize = this.qualityLevel <= 1 ? 256 : (this.qualityLevel === 2 ? 512 : 1024);
         this.spotlight.shadow.mapSize.width = shadowSize;
         this.spotlight.shadow.mapSize.height = shadowSize;
 

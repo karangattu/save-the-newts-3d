@@ -68,14 +68,21 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
-            0.1,
-            1000
+            0.25,
+            600
         );
         this.camera.position.set(0, 1.7, 0);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile });
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: !this.isMobile,
+            powerPreference: 'high-performance',
+            precision: 'highp',
+            alpha: false,
+            stencil: false,
+            depth: true
+        });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.maxPixelRatio = this.isMobile ? 1.5 : 2;
+        this.maxPixelRatio = this.isMobile ? 2 : Math.min(window.devicePixelRatio || 1, 2);
         this.qualityLevel = this.isMobile ? 1 : 3;
         this.renderer.setPixelRatio(this.getTargetPixelRatio());
         this.renderer.shadowMap.enabled = !this.isMobile;
@@ -789,7 +796,9 @@ class Game {
                 this.carEngineSounds.delete(car);
             } else {
                 const distance = playerPos.distanceTo(car.mesh.position);
-                this.audioManager.updateCarEngine(sound, distance, car.speed);
+                const relX = car.mesh.position.x - playerPos.x;
+                const pan = Math.max(-1, Math.min(1, relX / 12));
+                this.audioManager.updateCarEngine(sound, distance, car.speed, pan);
             }
         });
     }

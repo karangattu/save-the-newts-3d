@@ -7,8 +7,11 @@
 body {
     overflow: hidden;
     background: #000;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: #fff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 .fas,
@@ -109,7 +112,7 @@ body {
 }
 
 .overlay h1 {
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Mona Sans', sans-serif;
     font-size: 3.25rem;
     font-weight: 900;
     margin-bottom: 8px;
@@ -304,7 +307,7 @@ button {
     padding: 14px 32px;
     font-size: 1.15rem;
     font-weight: 800;
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Mona Sans', sans-serif;
     color: #000;
     border-radius: 30px;
     cursor: pointer;
@@ -368,7 +371,7 @@ button:active:not(:disabled) {
 
 .button-row button {
     padding: 14px 28px;
-    font-family: 'Outfit', sans-serif;
+    font-family: 'Mona Sans', sans-serif;
     font-size: 0.95rem;
     font-weight: 800;
     text-transform: uppercase;

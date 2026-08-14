@@ -226,7 +226,121 @@ test.describe('Graphics and flashlight enhancements', () => {
 
         // California eyes should be glowing/emissive
         expect(config.caliEmissiveHex.toLowerCase()).toBe('#ffcc00');
-        // Red-bellied eyes should remain dark
         expect(config.rbEmissiveHex.toLowerCase()).toBe('#000000');
+    });
+
+    test('high resolution textures with anisotropic filtering and mipmaps are generated', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const texturesInfo = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { LevelManager } = await import('/js/levels.js');
+            const { CarManager } = await import('/js/cars.js');
+            const { NewtManager } = await import('/js/newts.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.25, 600);
+            const renderer = window.__game ? window.__game.renderer : { capabilities: { getMaxAnisotropy: () => 16 } };
+
+            const levelMgr = new LevelManager(scene, camera, renderer, false);
+            const asphalt = levelMgr.createAsphaltTexture();
+            const grass = levelMgr.createGrassTexture();
+            const rock = levelMgr.createRockTexture();
+
+            const carMgr = new CarManager(scene, null, {});
+            const glow = carMgr.createGlowTexture();
+
+            const newtMgr = new NewtManager(scene, { isPointIlluminated: () => true }, null, false);
+            const newtMesh = newtMgr.createNewtMesh();
+            const bumpMap = newtMesh.userData.bodyMaterial.bumpMap;
+
+            return {
+                asphaltWidth: asphalt.image.width,
+                asphaltHeight: asphalt.image.height,
+                asphaltMipmaps: asphalt.generateMipmaps,
+                asphaltAnisotropy: asphalt.anisotropy,
+
+                grassWidth: grass.image.width,
+                grassHeight: grass.image.height,
+                grassMipmaps: grass.generateMipmaps,
+
+                rockWidth: rock.image.width,
+                rockHeight: rock.image.height,
+                rockMipmaps: rock.generateMipmaps,
+
+                glowWidth: glow.image.width,
+                glowHeight: glow.image.height,
+
+                bumpWidth: bumpMap ? bumpMap.image.width : 0,
+                bumpHeight: bumpMap ? bumpMap.image.height : 0
+            };
+        });
+
+        expect(texturesInfo.asphaltWidth).toBe(512);
+        expect(texturesInfo.asphaltHeight).toBe(1024);
+        expect(texturesInfo.asphaltMipmaps).toBe(true);
+        expect(texturesInfo.asphaltAnisotropy).toBeGreaterThanOrEqual(1);
+
+        expect(texturesInfo.grassWidth).toBe(512);
+        expect(texturesInfo.grassHeight).toBe(512);
+        expect(texturesInfo.grassMipmaps).toBe(true);
+
+        expect(texturesInfo.rockWidth).toBe(512);
+        expect(texturesInfo.rockHeight).toBe(512);
+        expect(texturesInfo.rockMipmaps).toBe(true);
+
+        expect(texturesInfo.glowWidth).toBe(128);
+        expect(texturesInfo.glowHeight).toBe(128);
+
+        expect(texturesInfo.bumpWidth).toBe(256);
+        expect(texturesInfo.bumpHeight).toBe(256);
+    });
+
+    test('high quality flashlight shadow resolution and bias settings', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const shadowInfo = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { Flashlight } = await import('/js/flashlight.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.25, 600);
+            const fl = new Flashlight(camera, scene, false);
+            fl.setQualityLevel(3);
+
+            return {
+                shadowWidth: fl.spotlight.shadow.mapSize.width,
+                shadowHeight: fl.spotlight.shadow.mapSize.height,
+                shadowBias: fl.spotlight.shadow.bias,
+                shadowNormalBias: fl.spotlight.shadow.normalBias,
+                shadowNear: fl.spotlight.shadow.camera.near
+            };
+        });
+
+        expect(shadowInfo.shadowWidth).toBe(1024);
+        expect(shadowInfo.shadowHeight).toBe(1024);
+        expect(shadowInfo.shadowBias).toBeLessThan(0);
+        expect(shadowInfo.shadowNormalBias).toBeGreaterThan(0);
+        expect(shadowInfo.shadowNear).toBe(0.5);
+    });
+
+    test('Mona Sans font is loaded in index.html and applied to body and buttons', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const fontDetails = await page.evaluate(() => {
+            const fontLink = document.querySelector('link[href*="Mona+Sans"]');
+            const bodyFont = window.getComputedStyle(document.body).fontFamily;
+            const buttonFont = window.getComputedStyle(document.querySelector('#start-button')).fontFamily;
+
+            return {
+                hasFontLink: !!fontLink,
+                bodyFont,
+                buttonFont
+            };
+        });
+
+        expect(fontDetails.hasFontLink).toBe(true);
+        expect(fontDetails.bodyFont.toLowerCase()).toContain('mona sans');
+        expect(fontDetails.buttonFont.toLowerCase()).toContain('mona sans');
     });
 });

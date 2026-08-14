@@ -13,6 +13,11 @@ module.exports = defineConfig({
     actionTimeout: 5000,
     ignoreHTTPSErrors: true
   },
+  webServer: {
+    command: 'npx http-server -p 3000 -c-1',
+    port: 3000,
+    reuseExistingServer: !process.env.CI
+  },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } }
   ]
