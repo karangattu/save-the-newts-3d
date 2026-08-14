@@ -1,77 +1,90 @@
-// audio.js - Procedural audio using Web Audio API oscillators
 export class AudioManager {
     constructor() {
         this.audioContext = null;
         this.isInitialized = false;
         
-        // Master volume
         this.masterGain = null;
-        
-        // Ambient nodes
         this.ambientNodes = [];
         this.cricketInterval = null;
+        this.frogInterval = null;
+        this.owlInterval = null;
+        this.thunderInterval = null;
 
-        // Background soundtrack
-        this.backgroundTrack = new Audio('assets/background_track.mp3');
-        this.backgroundTrack.loop = true;
-        this.backgroundTrack.volume = 0.12;
+        if (typeof Audio !== 'undefined') {
+            this.backgroundTrack = new Audio('assets/background_track.mp3');
+            this.backgroundTrack.loop = true;
+            this.backgroundTrack.volume = 0.12;
 
-        // Intro video music
-        this.videoMusic = new Audio('assets/video_music.mp3');
-        this.videoMusic.loop = true;
-        this.videoMusic.volume = 0.15;
+            this.videoMusic = new Audio('assets/video_music.mp3');
+            this.videoMusic.loop = true;
+            this.videoMusic.volume = 0.15;
+        } else {
+            this.backgroundTrack = { paused: true, play: () => Promise.resolve(), pause: () => {}, currentTime: 0 };
+            this.videoMusic = { paused: true, play: () => Promise.resolve(), pause: () => {}, currentTime: 0 };
+        }
         
-        // Low battery warning
         this.lowBatteryOscillator = null;
         this.lowBatteryGain = null;
         this.isLowBatteryPlaying = false;
         
-        // Footstep state
         this.lastFootstepTime = 0;
-        this.footstepInterval = 400; // ms between footsteps
+        this.footstepInterval = 400;
+        this._noiseBuffers = new Map();
     }
     
     init() {
         if (this.isInitialized) return;
         
-        // Create audio context (requires user interaction)
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioCtx = typeof window !== 'undefined'
+            ? (window.AudioContext || window.webkitAudioContext)
+            : (typeof AudioContext !== 'undefined' ? AudioContext : null);
+        if (!AudioCtx) return;
+        this.audioContext = new AudioCtx();
         
-        // Master gain
         this.masterGain = this.audioContext.createGain();
         this.masterGain.gain.value = 0.5;
         this.masterGain.connect(this.audioContext.destination);
         
         this.isInitialized = true;
     }
+
+    getNoiseBuffer(seconds = 1) {
+        const key = Math.round(seconds * 10);
+        if (this._noiseBuffers.has(key)) {
+            return this._noiseBuffers.get(key);
+        }
+        if (!this.audioContext) return null;
+        const length = Math.floor(this.audioContext.sampleRate * seconds);
+        const buffer = this.audioContext.createBuffer(1, length, this.audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        this._noiseBuffers.set(key, buffer);
+        return buffer;
+    }
     
     startAmbient(level = 1) {
         if (!this.isInitialized) return;
-        console.log("AudioManager.startAmbient() - level:", level);
 
         if (this.backgroundTrack.paused) {
             this.backgroundTrack.play().catch(() => {});
         }
 
-        // Wind - low frequency filtered noise (all levels, louder in storm)
-        this.createWindSound(level === 3 ? 0.12 : 0.05);
+        this.createWindSound(level === 3 ? 0.14 : 0.04);
 
-        // Cricket chirps (more frequent in clear night, fewer at dusk, none in storm)
         if (level <= 2) {
             this.startCrickets(level === 1);
         }
 
-        // Level 1: Frog croaking (Pacific tree frogs - realistic for SF area)
         if (level === 1) {
             this.startFrogCroaking();
         }
 
-        // Level 2: Dusk ambient - owl hoots and distant coyotes
         if (level === 2) {
             this.startDuskAmbient();
         }
 
-        // Level 3: Rain and storm
         if (level === 3) {
             this.createRainSound();
             this.createStormWind();
@@ -90,141 +103,162 @@ export class AudioManager {
     
     startFrogCroaking() {
         if (!this.isInitialized) return;
-        // Pacific tree frog "ribbit" - the iconic sound near Lexington Reservoir
         this.frogInterval = setInterval(() => {
-            if (Math.random() < 0.4) {
+            if (Math.random() < 0.45) {
                 this.playFrogCroak();
             }
-        }, 1200);
+        }, 1100);
     }
     
     playFrogCroak() {
         if (!this.isInitialized) return;
         const now = this.audioContext.currentTime;
+        const baseFreq = 820 + Math.random() * 120;
         
-        // Two-tone "rib-bit" pattern
         const osc1 = this.audioContext.createOscillator();
-        osc1.type = 'sine';
-        const baseFreq = 800 + Math.random() * 400;
+        osc1.type = 'sawtooth';
         osc1.frequency.setValueAtTime(baseFreq, now);
-        osc1.frequency.linearRampToValueAtTime(baseFreq * 1.2, now + 0.06);
-        osc1.frequency.linearRampToValueAtTime(baseFreq * 0.8, now + 0.12);
-        
-        // Second tone (the "bit")
+        osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.25, now + 0.08);
+        osc1.frequency.exponentialRampToValueAtTime(baseFreq * 0.85, now + 0.16);
+
         const osc2 = this.audioContext.createOscillator();
         osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(baseFreq * 1.3, now + 0.15);
-        osc2.frequency.linearRampToValueAtTime(baseFreq * 1.1, now + 0.25);
-        
-        const gain1 = this.audioContext.createGain();
-        gain1.gain.setValueAtTime(0, now);
-        gain1.gain.linearRampToValueAtTime(0.04, now + 0.02);
-        gain1.gain.linearRampToValueAtTime(0.04, now + 0.1);
-        gain1.gain.linearRampToValueAtTime(0, now + 0.13);
-        
-        const gain2 = this.audioContext.createGain();
-        gain2.gain.setValueAtTime(0, now);
-        gain2.gain.setValueAtTime(0, now + 0.14);
-        gain2.gain.linearRampToValueAtTime(0.035, now + 0.17);
-        gain2.gain.linearRampToValueAtTime(0.035, now + 0.22);
-        gain2.gain.linearRampToValueAtTime(0, now + 0.28);
-        
-        // Slight distortion for organic feel
+        osc2.frequency.setValueAtTime(baseFreq * 2.1, now);
+        osc2.frequency.exponentialRampToValueAtTime(baseFreq * 2.3, now + 0.08);
+        osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, now + 0.16);
+
+        const amOsc = this.audioContext.createOscillator();
+        amOsc.type = 'sine';
+        amOsc.frequency.setValueAtTime(50, now);
+
+        const amGain = this.audioContext.createGain();
+        amGain.gain.value = 0.5;
+        amOsc.connect(amGain.gain);
+
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'bandpass';
-        filter.frequency.value = baseFreq;
-        filter.Q.value = 3;
-        
-        osc1.connect(gain1);
-        gain1.connect(filter);
-        osc2.connect(gain2);
-        gain2.connect(filter);
-        filter.connect(this.masterGain);
-        
+        filter.frequency.setValueAtTime(1850, now);
+        filter.Q.setValueAtTime(4.5, now);
+
+        const gain1 = this.audioContext.createGain();
+        gain1.gain.setValueAtTime(0.001, now);
+        gain1.gain.exponentialRampToValueAtTime(0.045, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.02, now + 0.1);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+        osc1.connect(filter);
+        osc2.connect(filter);
+        filter.connect(gain1);
+        gain1.connect(this.masterGain);
+
         osc1.start(now);
-        osc1.stop(now + 0.15);
-        osc2.start(now + 0.15);
-        osc2.stop(now + 0.3);
+        osc2.start(now);
+        amOsc.start(now);
+        osc1.stop(now + 0.2);
+        osc2.stop(now + 0.2);
+        amOsc.stop(now + 0.2);
+
+        const osc3 = this.audioContext.createOscillator();
+        osc3.type = 'sawtooth';
+        osc3.frequency.setValueAtTime(baseFreq * 1.15, now + 0.14);
+        osc3.frequency.exponentialRampToValueAtTime(baseFreq * 1.35, now + 0.22);
+        osc3.frequency.exponentialRampToValueAtTime(baseFreq * 0.95, now + 0.32);
+
+        const gain2 = this.audioContext.createGain();
+        gain2.gain.setValueAtTime(0.001, now + 0.14);
+        gain2.gain.exponentialRampToValueAtTime(0.05, now + 0.17);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+        osc3.connect(filter);
+        filter.connect(gain2);
+        gain2.connect(this.masterGain);
+
+        osc3.start(now + 0.14);
+        osc3.stop(now + 0.36);
     }
     
     startDuskAmbient() {
         if (!this.isInitialized) return;
-        // Occasional owl hoot
         this.owlInterval = setInterval(() => {
-            if (Math.random() < 0.08) {
+            if (Math.random() < 0.12) {
                 this.playOwlHoot();
             }
-        }, 6000);
+        }, 5000);
     }
     
     playOwlHoot() {
         if (!this.isInitialized) return;
         const now = this.audioContext.currentTime;
-        
-        // Great horned owl "hoo-hoo-hooo" - common in Santa Cruz Mtns
-        const osc = this.audioContext.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(280, now);
-        osc.frequency.linearRampToValueAtTime(260, now + 0.3);
-        osc.frequency.setValueAtTime(280, now + 0.5);
-        osc.frequency.linearRampToValueAtTime(250, now + 0.9);
-        osc.frequency.setValueAtTime(270, now + 1.1);
-        osc.frequency.linearRampToValueAtTime(220, now + 1.8);
-        
-        const gain = this.audioContext.createGain();
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.025, now + 0.05);
-        gain.gain.linearRampToValueAtTime(0.02, now + 0.25);
-        gain.gain.linearRampToValueAtTime(0, now + 0.35);
-        gain.gain.linearRampToValueAtTime(0.025, now + 0.5);
-        gain.gain.linearRampToValueAtTime(0.02, now + 0.8);
-        gain.gain.linearRampToValueAtTime(0, now + 0.95);
-        gain.gain.linearRampToValueAtTime(0.03, now + 1.1);
-        gain.gain.linearRampToValueAtTime(0.015, now + 1.7);
-        gain.gain.linearRampToValueAtTime(0, now + 2.0);
-        
-        const filter = this.audioContext.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 400;
-        
-        osc.connect(gain);
-        gain.connect(filter);
-        filter.connect(this.masterGain);
-        
-        osc.start(now);
-        osc.stop(now + 2.0);
+        const basePitch = 240 + Math.random() * 20;
+
+        const hoots = [
+            { time: 0, dur: 0.22, pitch: basePitch },
+            { time: 0.35, dur: 0.18, pitch: basePitch * 1.05 },
+            { time: 0.65, dur: 0.18, pitch: basePitch * 1.02 },
+            { time: 0.95, dur: 0.45, pitch: basePitch * 0.92 }
+        ];
+
+        hoots.forEach(({ time, dur, pitch }) => {
+            const start = now + time;
+            const osc = this.audioContext.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(pitch, start);
+            osc.frequency.exponentialRampToValueAtTime(pitch * 0.96, start + dur);
+
+            const oscHarmonic = this.audioContext.createOscillator();
+            oscHarmonic.type = 'sine';
+            oscHarmonic.frequency.setValueAtTime(pitch * 2, start);
+            oscHarmonic.frequency.exponentialRampToValueAtTime(pitch * 1.92, start + dur);
+
+            const filter = this.audioContext.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(550, start);
+
+            const gain = this.audioContext.createGain();
+            gain.gain.setValueAtTime(0.001, start);
+            gain.gain.linearRampToValueAtTime(0.032, start + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+
+            const harmGain = this.audioContext.createGain();
+            harmGain.gain.value = 0.2;
+
+            osc.connect(gain);
+            oscHarmonic.connect(harmGain);
+            harmGain.connect(gain);
+            gain.connect(filter);
+            filter.connect(this.masterGain);
+
+            osc.start(start);
+            oscHarmonic.start(start);
+            osc.stop(start + dur + 0.05);
+            oscHarmonic.stop(start + dur + 0.05);
+        });
     }
     
     createStormWind() {
         if (!this.isInitialized) return;
-        // Howling wind gusts for level 3
-        const bufferSize = 2 * this.audioContext.sampleRate;
-        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            output[i] = Math.random() * 2 - 1;
-        }
+        const buffer = this.getNoiseBuffer(2);
+        if (!buffer) return;
         
         const windNoise = this.audioContext.createBufferSource();
-        windNoise.buffer = noiseBuffer;
+        windNoise.buffer = buffer;
         windNoise.loop = true;
         
         const bandPass = this.audioContext.createBiquadFilter();
         bandPass.type = 'bandpass';
-        bandPass.frequency.value = 400;
-        bandPass.Q.value = 1.5;
+        bandPass.frequency.value = 350;
+        bandPass.Q.value = 2.0;
         
-        // LFO for wind gusts
         const lfo = this.audioContext.createOscillator();
         lfo.type = 'sine';
-        lfo.frequency.value = 0.15;
+        lfo.frequency.value = 0.18;
         const lfoGain = this.audioContext.createGain();
-        lfoGain.gain.value = 0.08;
+        lfoGain.gain.value = 220;
         lfo.connect(lfoGain);
+        lfoGain.connect(bandPass.frequency);
         
         const windGain = this.audioContext.createGain();
-        windGain.gain.value = 0.1;
-        lfoGain.connect(windGain.gain);
+        windGain.gain.value = 0.12;
         
         windNoise.connect(bandPass);
         bandPass.connect(windGain);
@@ -236,77 +270,60 @@ export class AudioManager {
     }
     
     createRainSound() {
-        // Create rain using filtered noise
-        const bufferSize = 2 * this.audioContext.sampleRate;
-        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const output = noiseBuffer.getChannelData(0);
+        if (!this.isInitialized) return;
+        const buffer = this.getNoiseBuffer(2);
+        if (!buffer) return;
         
-        for (let i = 0; i < bufferSize; i++) {
-            output[i] = Math.random() * 2 - 1;
-        }
-        
-        // Main rain noise source
         const rainNoise = this.audioContext.createBufferSource();
-        rainNoise.buffer = noiseBuffer;
+        rainNoise.buffer = buffer;
         rainNoise.loop = true;
         
-        // High-pass filter to get that rain "hiss"
         const highPass = this.audioContext.createBiquadFilter();
         highPass.type = 'highpass';
-        highPass.frequency.value = 1000;
+        highPass.frequency.value = 850;
         
-        // Band-pass for rain character
-        const bandPass = this.audioContext.createBiquadFilter();
-        bandPass.type = 'bandpass';
-        bandPass.frequency.value = 3000;
-        bandPass.Q.value = 0.5;
+        const lowPass = this.audioContext.createBiquadFilter();
+        lowPass.type = 'lowpass';
+        lowPass.frequency.value = 7500;
         
-        // Gain
         const rainGain = this.audioContext.createGain();
-        rainGain.gain.value = 0.15;
+        rainGain.gain.value = 0.14;
         
         rainNoise.connect(highPass);
-        highPass.connect(bandPass);
-        bandPass.connect(rainGain);
+        highPass.connect(lowPass);
+        lowPass.connect(rainGain);
         rainGain.connect(this.masterGain);
         
         rainNoise.start();
         this.ambientNodes.push(rainNoise);
         
-        // Add occasional thunder rumble
         this.thunderInterval = setInterval(() => {
-            if (Math.random() < 0.1) { // 10% chance every few seconds
+            if (Math.random() < 0.12) {
                 this.playThunder();
             }
-        }, 8000);
+        }, 7500);
     }
     
     playThunder() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Low rumbling noise for thunder
-        const bufferSize = this.audioContext.sampleRate * 3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Envelope for thunder - quick attack, long decay
-            const env = Math.exp(-i / (bufferSize * 0.4)) * (1 - Math.exp(-i / 1000));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
+        const duration = 3.5;
+        const buffer = this.getNoiseBuffer(duration);
+        if (!buffer) return;
         
         const thunderSource = this.audioContext.createBufferSource();
         thunderSource.buffer = buffer;
         
-        // Low pass for rumble
         const lowPass = this.audioContext.createBiquadFilter();
         lowPass.type = 'lowpass';
-        lowPass.frequency.value = 150;
+        lowPass.frequency.setValueAtTime(160, now);
+        lowPass.frequency.exponentialRampToValueAtTime(60, now + duration);
         
         const thunderGain = this.audioContext.createGain();
-        thunderGain.gain.value = 0.3;
+        thunderGain.gain.setValueAtTime(0.001, now);
+        thunderGain.gain.exponentialRampToValueAtTime(0.38, now + 0.08);
+        thunderGain.gain.exponentialRampToValueAtTime(0.15, now + 1.2);
+        thunderGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
         
         thunderSource.connect(lowPass);
         lowPass.connect(thunderGain);
@@ -316,45 +333,43 @@ export class AudioManager {
     }
     
     createWindSound(volume = 0.05) {
-        // Create noise using oscillator modulation
-        const noiseGain = this.audioContext.createGain();
-        noiseGain.gain.value = volume;
-        noiseGain.connect(this.masterGain);
-        
-        // Low frequency oscillator for wind effect
-        const windOsc = this.audioContext.createOscillator();
-        windOsc.type = 'sine';
-        windOsc.frequency.value = 80;
-        
-        // Modulate with another oscillator for variation
-        const modOsc = this.audioContext.createOscillator();
-        modOsc.type = 'sine';
-        modOsc.frequency.value = 0.2;
-        
-        const modGain = this.audioContext.createGain();
-        modGain.gain.value = 30;
-        
-        modOsc.connect(modGain);
-        modGain.connect(windOsc.frequency);
-        
-        // Low pass filter
-        const filter = this.audioContext.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 200;
-        
-        windOsc.connect(filter);
-        filter.connect(noiseGain);
-        
-        windOsc.start();
-        modOsc.start();
-        
-        this.ambientNodes.push(windOsc, modOsc);
+        if (!this.isInitialized) return;
+        const buffer = this.getNoiseBuffer(2);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+        noise.loop = true;
+
+        const lowPass = this.audioContext.createBiquadFilter();
+        lowPass.type = 'lowpass';
+        lowPass.frequency.value = 220;
+
+        const windGain = this.audioContext.createGain();
+        windGain.gain.value = volume;
+
+        const lfo = this.audioContext.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.08;
+
+        const lfoGain = this.audioContext.createGain();
+        lfoGain.gain.value = volume * 0.4;
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(windGain.gain);
+
+        noise.connect(lowPass);
+        lowPass.connect(windGain);
+        windGain.connect(this.masterGain);
+
+        noise.start();
+        lfo.start();
+        this.ambientNodes.push(noise, lfo);
     }
     
     startCrickets(isClearNight = false) {
-        // Random cricket chirps - more frequent in clear night
-        const chirpChance = isClearNight ? 0.35 : 0.15;
-        const interval = isClearNight ? 400 : 800; // More frequent in clear night
+        const chirpChance = isClearNight ? 0.4 : 0.2;
+        const interval = isClearNight ? 450 : 850;
         
         this.cricketInterval = setInterval(() => {
             if (Math.random() < chirpChance) {
@@ -365,61 +380,42 @@ export class AudioManager {
     
     playCricketChirp() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Cricket chirp - high frequency short burst
-        const osc = this.audioContext.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.value = 4000 + Math.random() * 2000;
-        
-        const gain = this.audioContext.createGain();
-        gain.gain.value = 0;
-        
-        // Chirp envelope
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.03, now + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-        
-        osc.connect(gain);
-        gain.connect(this.masterGain);
-        
-        osc.start(now);
-        osc.stop(now + 0.1);
-        
-        // Sometimes do multiple chirps
-        if (Math.random() < 0.5) {
-            const osc2 = this.audioContext.createOscillator();
-            osc2.type = 'sine';
-            osc2.frequency.value = osc.frequency.value * 1.1;
+        const baseFreq = 4500 + Math.random() * 800;
+        const pulseCount = 3 + Math.floor(Math.random() * 2);
+
+        for (let i = 0; i < pulseCount; i++) {
+            const start = now + i * 0.024;
+            const osc = this.audioContext.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(baseFreq, start);
             
-            const gain2 = this.audioContext.createGain();
-            gain2.gain.setValueAtTime(0, now + 0.06);
-            gain2.gain.linearRampToValueAtTime(0.02, now + 0.07);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            const gain = this.audioContext.createGain();
+            gain.gain.setValueAtTime(0.001, start);
+            gain.gain.exponentialRampToValueAtTime(0.028, start + 0.004);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + 0.018);
             
-            osc2.connect(gain2);
-            gain2.connect(this.masterGain);
+            osc.connect(gain);
+            gain.connect(this.masterGain);
             
-            osc2.start(now + 0.06);
-            osc2.stop(now + 0.15);
+            osc.start(start);
+            osc.stop(start + 0.02);
         }
     }
     
     playNewtChirp() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // Newt chirp - sine wave glide from 400Hz to 600Hz
         const osc = this.audioContext.createOscillator();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(400, now);
-        osc.frequency.linearRampToValueAtTime(600, now + 0.15);
+        osc.frequency.setValueAtTime(420, now);
+        osc.frequency.exponentialRampToValueAtTime(740, now + 0.12);
         
         const gain = this.audioContext.createGain();
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
         
         osc.connect(gain);
         gain.connect(this.masterGain);
@@ -430,243 +426,236 @@ export class AudioManager {
     
     playNewtCrushSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // Sad squish sound - quick descending tone with noise
         const osc = this.audioContext.createOscillator();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(600, now);
-        osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(70, now + 0.18);
         
         const oscGain = this.audioContext.createGain();
-        oscGain.gain.setValueAtTime(0.2, now);
-        oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        oscGain.gain.setValueAtTime(0.24, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
         
+        const buffer = this.getNoiseBuffer(0.2);
+        if (buffer) {
+            const noise = this.audioContext.createBufferSource();
+            noise.buffer = buffer;
+            const filter = this.audioContext.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 600;
+            const noiseGain = this.audioContext.createGain();
+            noiseGain.gain.setValueAtTime(0.2, now);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+            noise.connect(filter);
+            filter.connect(noiseGain);
+            noiseGain.connect(this.masterGain);
+            noise.start(now);
+        }
+
         osc.connect(oscGain);
         oscGain.connect(this.masterGain);
         
         osc.start(now);
         osc.stop(now + 0.2);
-        
-        // Add a small "splat" noise
-        const bufferSize = this.audioContext.sampleRate * 0.1;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
-        const noiseGain = this.audioContext.createGain();
-        noiseGain.gain.value = 0.15;
-        
-        const filter = this.audioContext.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 500;
-        
-        noiseSource.connect(filter);
-        filter.connect(noiseGain);
-        noiseGain.connect(this.masterGain);
-        
-        noiseSource.start(now);
     }
     
     playRescueSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Ascending arpeggio C-E-G
-        const notes = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5
+        const notes = [261.63, 329.63, 392.00, 523.25, 659.25];
         
         notes.forEach((freq, i) => {
             const osc = this.audioContext.createOscillator();
             osc.type = 'sine';
             osc.frequency.value = freq;
+
+            const oscHarmonic = this.audioContext.createOscillator();
+            oscHarmonic.type = 'triangle';
+            oscHarmonic.frequency.value = freq * 2;
             
             const gain = this.audioContext.createGain();
-            const startTime = now + i * 0.08;
+            const start = now + i * 0.07;
             
-            gain.gain.setValueAtTime(0, startTime);
-            gain.gain.linearRampToValueAtTime(0.2, startTime + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.15);
+            gain.gain.setValueAtTime(0.001, start);
+            gain.gain.exponentialRampToValueAtTime(0.18, start + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+
+            const harmGain = this.audioContext.createGain();
+            harmGain.gain.value = 0.25;
             
             osc.connect(gain);
+            oscHarmonic.connect(harmGain);
+            harmGain.connect(gain);
             gain.connect(this.masterGain);
             
-            osc.start(startTime);
-            osc.stop(startTime + 0.2);
+            osc.start(start);
+            oscHarmonic.start(start);
+            osc.stop(start + 0.4);
+            oscHarmonic.stop(start + 0.4);
         });
     }
     
     playCarEngine(car) {
         if (!this.isInitialized || car.isStealth) return null;
         
-        // Create engine sound nodes with vehicle-specific characteristics
         const osc = this.audioContext.createOscillator();
-        
-        // Vehicle-specific sound profiles
         let baseFreq, oscType, modFreq, modAmount, filterFreq;
         
         switch (car.vehicleType) {
             case 'motorcycle':
-                // High-pitched whine
-                oscType = 'triangle';
-                baseFreq = 150 + Math.random() * 50; // 150-200Hz
-                modFreq = 15;
-                modAmount = 20;
-                filterFreq = 800;
+                oscType = 'sawtooth';
+                baseFreq = 160 + Math.random() * 40;
+                modFreq = 18;
+                modAmount = 25;
+                filterFreq = 750;
                 break;
             case 'semi':
-                // Deep rumbling diesel
                 oscType = 'sawtooth';
-                baseFreq = 40 + Math.random() * 20; // 40-60Hz
-                modFreq = 4;
-                modAmount = 15;
-                filterFreq = 200;
+                baseFreq = 42 + Math.random() * 15;
+                modFreq = 6;
+                modAmount = 20;
+                filterFreq = 220;
                 break;
             case 'truck':
-                // Lower truck rumble
                 oscType = 'sawtooth';
-                baseFreq = 60 + Math.random() * 20; // 60-80Hz
-                modFreq = 5;
-                modAmount = 12;
-                filterFreq = 250;
-                break;
-            case 'suv':
-                // Slightly deeper than car
-                oscType = 'sawtooth';
-                baseFreq = 70 + Math.random() * 30; // 70-100Hz
-                modFreq = 7;
-                modAmount = 10;
+                baseFreq = 58 + Math.random() * 18;
+                modFreq = 8;
+                modAmount = 16;
                 filterFreq = 280;
                 break;
-            default: // car, sedan
+            case 'suv':
                 oscType = 'sawtooth';
-                baseFreq = 80 + Math.random() * 40; // 80-120Hz
-                modFreq = 8;
-                modAmount = 10;
-                filterFreq = 300;
+                baseFreq = 72 + Math.random() * 20;
+                modFreq = 9;
+                modAmount = 14;
+                filterFreq = 320;
+                break;
+            default:
+                oscType = 'sawtooth';
+                baseFreq = 82 + Math.random() * 25;
+                modFreq = 10;
+                modAmount = 12;
+                filterFreq = 350;
         }
         
         osc.type = oscType;
         osc.frequency.value = baseFreq;
         
-        // Modulator for engine rumble
         const modOsc = this.audioContext.createOscillator();
         modOsc.type = 'sine';
         modOsc.frequency.value = modFreq;
         
         const modGain = this.audioContext.createGain();
         modGain.gain.value = modAmount;
-        
         modOsc.connect(modGain);
         modGain.connect(osc.frequency);
         
-        // Filter
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.value = filterFreq;
         
-        // Gain with distance attenuation
+        let panner = null;
+        if (this.audioContext.createStereoPanner) {
+            panner = this.audioContext.createStereoPanner();
+        }
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.15;
+        gain.gain.value = 0.001;
         
         osc.connect(filter);
-        filter.connect(gain);
+        if (panner) {
+            filter.connect(panner);
+            panner.connect(gain);
+        } else {
+            filter.connect(gain);
+        }
         gain.connect(this.masterGain);
         
         osc.start();
         modOsc.start();
         
         return {
-            osc: osc,
-            modOsc: modOsc,
-            gain: gain,
-            baseFreq: baseFreq,
+            osc,
+            modOsc,
+            gain,
+            panner,
+            baseFreq,
             vehicleType: car.vehicleType
         };
     }
     
-    updateCarEngine(engineSound, distance, carSpeed) {
+    updateCarEngine(engineSound, distance, carSpeed, pan = 0) {
         if (!engineSound) return;
         
-        // Distance attenuation - louder as cars get closer
-        const maxDistance = 60;
-        const minDistance = 3; // Distance at which volume is maximum
+        const maxDistance = 65;
+        const minDistance = 2.5;
         
-        // Use inverse square falloff for more realistic sound attenuation
-        // Cars get much louder as they approach
         let volume;
         if (distance <= minDistance) {
-            volume = 0.6; // Maximum volume when very close
+            volume = 0.65;
         } else {
-            // Quadratic falloff for more dramatic distance effect
             const normalizedDist = (distance - minDistance) / (maxDistance - minDistance);
-            volume = Math.max(0, 1 - normalizedDist * normalizedDist) * 0.6;
+            volume = Math.max(0, 1 - normalizedDist * normalizedDist) * 0.65;
         }
         engineSound.gain.gain.value = volume;
         
-        // Doppler-like pitch shift based on speed
-        const pitchMult = 1 + (carSpeed - 10) / 50;
+        const pitchMult = 1 + (carSpeed - 10) / 45;
         engineSound.osc.frequency.value = engineSound.baseFreq * pitchMult;
+
+        if (engineSound.panner) {
+            engineSound.panner.pan.value = Math.max(-1, Math.min(1, pan));
+        }
     }
     
     stopCarEngine(engineSound) {
         if (!engineSound) return;
         
         const now = this.audioContext.currentTime;
-        engineSound.gain.gain.linearRampToValueAtTime(0, now + 0.1);
+        engineSound.gain.gain.linearRampToValueAtTime(0.001, now + 0.1);
         
         setTimeout(() => {
-            engineSound.osc.stop();
-            engineSound.modOsc.stop();
+            try {
+                engineSound.osc.stop();
+                engineSound.modOsc.stop();
+            } catch (e) {}
         }, 150);
     }
     
     playNearMissSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // Whoosh - filtered noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+        const buffer = this.getNoiseBuffer(0.35);
+        if (buffer) {
+            const noise = this.audioContext.createBufferSource();
+            noise.buffer = buffer;
+            const filter = this.audioContext.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(800, now);
+            filter.frequency.exponentialRampToValueAtTime(200, now + 0.35);
+            filter.Q.value = 1.2;
+
+            const gain = this.audioContext.createGain();
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.linearRampToValueAtTime(0.45, now + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.masterGain);
+            noise.start(now);
         }
         
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
-        const filter = this.audioContext.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 1000;
-        filter.Q.value = 0.5;
-        
-        const gain = this.audioContext.createGain();
-        gain.gain.value = 0.4;
-        
-        noiseSource.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.masterGain);
-        
-        noiseSource.start(now);
-        
-        // Heartbeat thump
         const heartOsc = this.audioContext.createOscillator();
         heartOsc.type = 'sine';
-        heartOsc.frequency.value = 60;
+        heartOsc.frequency.setValueAtTime(75, now);
+        heartOsc.frequency.exponentialRampToValueAtTime(45, now + 0.15);
         
         const heartGain = this.audioContext.createGain();
-        heartGain.gain.setValueAtTime(0.3, now);
-        heartGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        heartGain.gain.setValueAtTime(0.35, now);
+        heartGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
         
         heartOsc.connect(heartGain);
         heartGain.connect(this.masterGain);
@@ -677,24 +666,21 @@ export class AudioManager {
     
     startLowBatteryWarning() {
         if (!this.isInitialized || this.isLowBatteryPlaying) return;
-        
         this.isLowBatteryPlaying = true;
         
-        // Pulsing square wave beep
         this.lowBatteryOscillator = this.audioContext.createOscillator();
-        this.lowBatteryOscillator.type = 'square';
-        this.lowBatteryOscillator.frequency.value = 440;
+        this.lowBatteryOscillator.type = 'sine';
+        this.lowBatteryOscillator.frequency.value = 520;
         
-        // LFO for pulsing
         const lfo = this.audioContext.createOscillator();
         lfo.type = 'square';
-        lfo.frequency.value = 2;
+        lfo.frequency.value = 2.5;
         
         this.lowBatteryGain = this.audioContext.createGain();
         this.lowBatteryGain.gain.value = 0;
         
         const lfoGain = this.audioContext.createGain();
-        lfoGain.gain.value = 0.08;
+        lfoGain.gain.value = 0.07;
         
         lfo.connect(lfoGain);
         lfoGain.connect(this.lowBatteryGain.gain);
@@ -710,236 +696,185 @@ export class AudioManager {
     
     stopLowBatteryWarning() {
         if (!this.isLowBatteryPlaying) return;
-        
         this.isLowBatteryPlaying = false;
         
         if (this.lowBatteryOscillator) {
-            this.lowBatteryOscillator.stop();
+            try { this.lowBatteryOscillator.stop(); } catch (e) {}
             this.lowBatteryOscillator = null;
         }
         if (this.lowBatteryLfo) {
-            this.lowBatteryLfo.stop();
+            try { this.lowBatteryLfo.stop(); } catch (e) {}
             this.lowBatteryLfo = null;
         }
     }
     
     playGameOverSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // Descending tone sweep
         const osc = this.audioContext.createOscillator();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(800, now);
-        osc.frequency.exponentialRampToValueAtTime(100, now + 0.8);
+        osc.frequency.setValueAtTime(600, now);
+        osc.frequency.exponentialRampToValueAtTime(75, now + 0.9);
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(2000, now);
-        filter.frequency.exponentialRampToValueAtTime(200, now + 0.8);
+        filter.frequency.setValueAtTime(1600, now);
+        filter.frequency.exponentialRampToValueAtTime(150, now + 0.9);
         
         const gain = this.audioContext.createGain();
-        gain.gain.setValueAtTime(0.3, now);
-        gain.gain.linearRampToValueAtTime(0, now + 1);
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.linearRampToValueAtTime(0.001, now + 1.0);
         
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
         
         osc.start(now);
-        osc.stop(now + 1);
+        osc.stop(now + 1.05);
     }
     
     playCarHitSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Harsh noise burst for impact
-        const bufferSize = this.audioContext.sampleRate * 0.5;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.2));
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
+        const buffer = this.getNoiseBuffer(0.5);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+
+        const lowPass = this.audioContext.createBiquadFilter();
+        lowPass.type = 'lowpass';
+        lowPass.frequency.setValueAtTime(450, now);
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.5;
-        
-        noiseSource.connect(gain);
+        gain.gain.setValueAtTime(0.55, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+        noise.connect(lowPass);
+        lowPass.connect(gain);
         gain.connect(this.masterGain);
-        
-        noiseSource.start(now);
+
+        noise.start(now);
     }
     
     playFallingSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // Falling wind whoosh - descending pitch
         const osc = this.audioContext.createOscillator();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(400, now);
-        osc.frequency.exponentialRampToValueAtTime(50, now + 2);
+        osc.frequency.setValueAtTime(360, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + 1.9);
         
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(2000, now);
-        filter.frequency.exponentialRampToValueAtTime(200, now + 2);
+        filter.frequency.setValueAtTime(1800, now);
+        filter.frequency.exponentialRampToValueAtTime(180, now + 1.9);
         
         const gain = this.audioContext.createGain();
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.3, now + 0.2);
-        gain.gain.linearRampToValueAtTime(0.4, now + 1.5);
-        gain.gain.linearRampToValueAtTime(0, now + 2);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.32, now + 0.2);
+        gain.gain.linearRampToValueAtTime(0.38, now + 1.4);
+        gain.gain.linearRampToValueAtTime(0.001, now + 1.95);
         
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
         
         osc.start(now);
-        osc.stop(now + 2.1);
+        osc.stop(now + 2.0);
         
-        // Water splash at the end
-        setTimeout(() => this.playSplashSound(), 1800);
+        setTimeout(() => this.playSplashSound(), 1750);
     }
     
     playSplashSound() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Water splash - filtered noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.8;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            const env = Math.exp(-i / (bufferSize * 0.3)) * (1 - Math.exp(-i / 500));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
+        const buffer = this.getNoiseBuffer(0.8);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 800;
-        
+        filter.frequency.setValueAtTime(900, now);
+        filter.frequency.exponentialRampToValueAtTime(200, now + 0.7);
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.5;
-        
-        noiseSource.connect(filter);
+        gain.gain.setValueAtTime(0.48, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+
+        noise.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
-        
-        noiseSource.start(now);
+
+        noise.start(now);
     }
     
     playPredatorAttackSound(predatorType) {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Predator growl/roar
+        const isLion = predatorType === 'mountain lion';
+        const baseFreq = isLion ? 280 : 110;
+
         const growlOsc = this.audioContext.createOscillator();
         growlOsc.type = 'sawtooth';
-        
-        // Mountain lion: higher pitched scream, Bear: lower growl
-        const baseFreq = predatorType === 'mountain lion' ? 300 : 120;
         growlOsc.frequency.setValueAtTime(baseFreq, now);
-        growlOsc.frequency.setValueAtTime(baseFreq * 1.2, now + 0.1);
-        growlOsc.frequency.setValueAtTime(baseFreq * 0.8, now + 0.3);
-        growlOsc.frequency.setValueAtTime(baseFreq * 1.1, now + 0.5);
+        growlOsc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, now + 0.15);
+        growlOsc.frequency.exponentialRampToValueAtTime(baseFreq * 0.75, now + 0.45);
         
-        // Add noise for texture
-        const bufferSize = this.audioContext.sampleRate * 1;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * 0.5;
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
-        // Filter the growl
-        const growlFilter = this.audioContext.createBiquadFilter();
-        growlFilter.type = 'lowpass';
-        growlFilter.frequency.value = predatorType === 'mountain lion' ? 1500 : 600;
-        
-        // Tremolo for growl variation
+        const filter = this.audioContext.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = isLion ? 1400 : 500;
+        filter.Q.value = 2.5;
+
         const lfo = this.audioContext.createOscillator();
-        lfo.frequency.value = predatorType === 'mountain lion' ? 20 : 8;
+        lfo.frequency.value = isLion ? 22 : 9;
         const lfoGain = this.audioContext.createGain();
-        lfoGain.gain.value = 0.3;
+        lfoGain.gain.value = 0.35;
         lfo.connect(lfoGain);
-        
+
         const growlGain = this.audioContext.createGain();
-        lfoGain.connect(growlGain.gain);
-        growlGain.gain.value = 0.4;
-        
-        // Envelope
-        const envGain = this.audioContext.createGain();
-        envGain.gain.setValueAtTime(0, now);
-        envGain.gain.linearRampToValueAtTime(1, now + 0.05);
-        envGain.gain.setValueAtTime(1, now + 0.6);
-        envGain.gain.exponentialRampToValueAtTime(0.01, now + 1);
-        
-        growlOsc.connect(growlFilter);
-        growlFilter.connect(growlGain);
-        noiseSource.connect(growlGain);
-        growlGain.connect(envGain);
-        envGain.connect(this.masterGain);
-        
+        growlGain.gain.setValueAtTime(0.001, now);
+        growlGain.gain.linearRampToValueAtTime(0.45, now + 0.06);
+        growlGain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+
+        growlOsc.connect(filter);
+        filter.connect(growlGain);
+        growlGain.connect(this.masterGain);
+
         growlOsc.start(now);
         lfo.start(now);
-        noiseSource.start(now);
-        
-        growlOsc.stop(now + 1);
-        lfo.stop(now + 1);
-        noiseSource.stop(now + 1);
-        
-        // Attack sound after growl
-        setTimeout(() => this.playAttackImpact(), 700);
+        growlOsc.stop(now + 1.0);
+        lfo.stop(now + 1.0);
+
+        setTimeout(() => this.playAttackImpact(), 650);
     }
     
     playAttackImpact() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Violent impact noise
-        const bufferSize = this.audioContext.sampleRate * 0.3;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.1));
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
+        const buffer = this.getNoiseBuffer(0.3);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 500;
-        
+        filter.frequency.value = 450;
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.6;
-        
-        noiseSource.connect(filter);
+        gain.gain.setValueAtTime(0.55, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+        noise.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
-        
-        noiseSource.start(now);
+
+        noise.start(now);
     }
     
     playFootstep(isRunning = false) {
@@ -952,128 +887,97 @@ export class AudioManager {
         this.lastFootstepTime = now;
         
         const audioNow = this.audioContext.currentTime;
-        
-        // Footstep on wet ground - short noise burst
-        const bufferSize = this.audioContext.sampleRate * 0.08;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Quick attack, fast decay
-            const env = Math.exp(-i / (bufferSize * 0.2));
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
-        // Low pass for muffled wet ground sound
+        const buffer = this.getNoiseBuffer(0.09);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+
         const filter = this.audioContext.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 400 + Math.random() * 200;
-        
+        filter.type = 'bandpass';
+        filter.frequency.value = 350 + Math.random() * 200;
+        filter.Q.value = 1.5;
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.08 + Math.random() * 0.04;
-        
-        noiseSource.connect(filter);
+        gain.gain.setValueAtTime(0.08 + Math.random() * 0.04, audioNow);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioNow + 0.08);
+
+        noise.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
-        
-        noiseSource.start(audioNow);
-        
-        // Add a subtle squelch for wet ground
-        if (Math.random() < 0.3) {
-            this.playSquelch();
-        }
+
+        noise.start(audioNow);
     }
     
     playSquelch() {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
         
-        // High frequency squelch
         const osc = this.audioContext.createOscillator();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, now);
-        osc.frequency.exponentialRampToValueAtTime(200, now + 0.05);
+        osc.frequency.setValueAtTime(750, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.06);
         
         const gain = this.audioContext.createGain();
-        gain.gain.setValueAtTime(0.03, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
         
         osc.connect(gain);
         gain.connect(this.masterGain);
         
         osc.start(now);
-        osc.stop(now + 0.06);
+        osc.stop(now + 0.07);
     }
     
     playBreathing(intensity = 0.5) {
         if (!this.isInitialized) return;
-        
         const now = this.audioContext.currentTime;
-        
-        // Breathing - filtered noise with rhythm
-        const bufferSize = this.audioContext.sampleRate * 0.8;
-        const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-        const data = buffer.getChannelData(0);
-        
-        for (let i = 0; i < bufferSize; i++) {
-            // Breathing envelope
-            const phase = i / bufferSize;
-            const env = Math.sin(phase * Math.PI) * 0.5;
-            data[i] = (Math.random() * 2 - 1) * env;
-        }
-        
-        const noiseSource = this.audioContext.createBufferSource();
-        noiseSource.buffer = buffer;
-        
+        const buffer = this.getNoiseBuffer(0.8);
+        if (!buffer) return;
+
+        const noise = this.audioContext.createBufferSource();
+        noise.buffer = buffer;
+
         const filter = this.audioContext.createBiquadFilter();
         filter.type = 'bandpass';
-        filter.frequency.value = 300;
-        filter.Q.value = 2;
-        
+        filter.frequency.value = 320;
+        filter.Q.value = 2.2;
+
         const gain = this.audioContext.createGain();
-        gain.gain.value = 0.02 * intensity;
-        
-        noiseSource.connect(filter);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.024 * intensity, now + 0.35);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.78);
+
+        noise.connect(filter);
         filter.connect(gain);
         gain.connect(this.masterGain);
-        
-        noiseSource.start(now);
+
+        noise.start(now);
     }
     
     stopAmbient() {
         this.backgroundTrack.pause();
 
-        // Stop ambient oscillators
         this.ambientNodes.forEach(node => {
-            try {
-                node.stop();
-            } catch (e) {}
+            try { node.stop(); } catch (e) {}
         });
         this.ambientNodes = [];
         
-        // Stop cricket interval
         if (this.cricketInterval) {
             clearInterval(this.cricketInterval);
             this.cricketInterval = null;
         }
         
-        // Stop frog interval
         if (this.frogInterval) {
             clearInterval(this.frogInterval);
             this.frogInterval = null;
         }
         
-        // Stop owl interval
         if (this.owlInterval) {
             clearInterval(this.owlInterval);
             this.owlInterval = null;
         }
         
-        // Stop thunder interval
         if (this.thunderInterval) {
             clearInterval(this.thunderInterval);
             this.thunderInterval = null;
