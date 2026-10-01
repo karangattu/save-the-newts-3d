@@ -1,5 +1,6 @@
 // cars.js - Car traffic with normal and stealth variants, collision detection
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Vehicle types
 const VEHICLE_TYPES = {
@@ -43,6 +44,9 @@ export class CarManager {
         // Shared materials to reduce draw calls
         this.sharedMaterials = this.createSharedMaterials();
 
+        // Body material cache: one material per (color, finish) instead of per vehicle
+        this._bodyMatCache = new Map();
+
         this.qualityLevel = this.isLowEnd ? 1 : 3;
         this.maxCars = this.isLowEnd ? 7 : 14;
 
@@ -69,6 +73,108 @@ export class CarManager {
         this.lightGlows = null;
         this.lightGlowPositions = null;
         this.initLightGlows();
+
+        // Scratch objects for per-frame headlight-cone matrices (no per-frame allocs)
+        this._conePos = new THREE.Vector3();
+        this._coneQuat = new THREE.Quaternion();
+        this._coneScl = new THREE.Vector3();
+        this._coneMat = new THREE.Matrix4();
+        this._coneOff = new THREE.Matrix4();
+        this._coneUp = new THREE.Vector3(0, 1, 0);
+        this.headlightCones = null;
+        this.initHeadlightCones();
+    }
+
+    createConeTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        // Bright at the bumper (v=0), fading with distance; soft side falloff.
+        const vertical = ctx.createLinearGradient(0, 0, 0, 128);
+        vertical.addColorStop(0, 'rgba(255,242,214,0.85)');
+        vertical.addColorStop(0.5, 'rgba(255,242,214,0.28)');
+        vertical.addColorStop(1, 'rgba(255,242,214,0)');
+        ctx.fillStyle = vertical;
+        ctx.fillRect(0, 0, 128, 128);
+        ctx.globalCompositeOperation = 'destination-in';
+        const horizontal = ctx.createLinearGradient(0, 0, 128, 0);
+        horizontal.addColorStop(0, 'rgba(0,0,0,0)');
+        horizontal.addColorStop(0.25, 'rgba(0,0,0,1)');
+        horizontal.addColorStop(0.75, 'rgba(0,0,0,1)');
+        horizontal.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = horizontal;
+        ctx.fillRect(0, 0, 128, 128);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
+    }
+
+    initHeadlightCones() {
+        const capacity = 16; // >= maxCars at any quality level
+        // Trapezoid ribbon: narrow at the bumper, widening down-road.
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array([
+            -0.6, 0, 0,
+             0.6, 0, 0,
+            -1.6, 0, 7,
+             1.6, 0, 7
+        ]);
+        const uvs = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        geo.setIndex([0, 1, 2, 1, 3, 2]);
+        geo.computeVertexNormals();
+        const mat = new THREE.MeshBasicMaterial({
+            map: this.createConeTexture(),
+            color: 0xfff2d6,
+            transparent: true,
+            opacity: 0.5,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        this.headlightCones = new THREE.InstancedMesh(geo, mat, capacity);
+        this.headlightCones.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.headlightCones.frustumCulled = false;
+        this.headlightCones.count = 0;
+        this.headlightCones.renderOrder = 5;
+        this.scene.add(this.headlightCones);
+    }
+
+    // Cone width/length per vehicle type (semi throws farther, bike narrower).
+    getConeScale(vehicleType, out) {
+        if (vehicleType === VEHICLE_TYPES.SEMI) return out.set(1.3, 1, 1.4);
+        if (vehicleType === VEHICLE_TYPES.MOTORCYCLE) return out.set(0.5, 1, 0.6);
+        if (vehicleType === VEHICLE_TYPES.TRUCK) return out.set(1.1, 1, 1.0);
+        return out.set(1, 1, 1);
+    }
+
+    getConeFrontZ(vehicleType) {
+        if (vehicleType === VEHICLE_TYPES.SEMI) return 4.32;
+        if (vehicleType === VEHICLE_TYPES.MOTORCYCLE) return 1.22;
+        if (vehicleType === VEHICLE_TYPES.TRUCK) return 2.48;
+        if (vehicleType === VEHICLE_TYPES.SUV) return 2.18;
+        if (vehicleType === VEHICLE_TYPES.SEDAN) return 2.38;
+        return 2.12;
+    }
+
+    updateHeadlightCones() {
+        if (!this.headlightCones) return;
+        let idx = 0;
+        const cap = this.headlightCones.instanceMatrix.count;
+        for (const car of this.cars) {
+            if (car.isStealth || idx >= cap) continue;
+            const mesh = car.mesh;
+            this._coneQuat.setFromAxisAngle(this._coneUp, mesh.rotation.y);
+            this.getConeScale(car.vehicleType, this._coneScl);
+            this._coneOff.makeTranslation(0, 0.12, this.getConeFrontZ(car.vehicleType));
+            this._coneMat.compose(mesh.position, this._coneQuat, this._coneScl).multiply(this._coneOff);
+            this.headlightCones.setMatrixAt(idx, this._coneMat);
+            idx++;
+        }
+        this.headlightCones.count = idx;
+        this.headlightCones.instanceMatrix.needsUpdate = true;
     }
 
     createGlowTexture() {
@@ -170,6 +276,7 @@ export class CarManager {
         }
 
         const showDynamicHeadlights = this.enableDynamicLights && this.qualityLevel >= 2;
+        const showRiderDetail = this.qualityLevel >= 2;
         if (this.carPool) {
             this.carPool.forEach(pool => {
                 pool.meshes.forEach(mesh => {
@@ -178,6 +285,9 @@ export class CarManager {
                             child.visible = showDynamicHeadlights;
                         }
                     });
+                    if (mesh.userData.riderDetail) {
+                        mesh.userData.riderDetail.visible = showRiderDetail;
+                    }
                 });
             });
         }
@@ -245,20 +355,93 @@ export class CarManager {
     }
 
     createVehicleMesh(isStealth, vehicleType) {
+        let group;
         switch (vehicleType) {
             case VEHICLE_TYPES.MOTORCYCLE:
-                return this.createMotorcycleMesh(isStealth);
+                group = this.createMotorcycleMesh(isStealth);
+                break;
             case VEHICLE_TYPES.TRUCK:
-                return this.createTruckMesh(isStealth);
+                group = this.createTruckMesh(isStealth);
+                break;
             case VEHICLE_TYPES.SEMI:
-                return this.createSemiMesh(isStealth);
+                group = this.createSemiMesh(isStealth);
+                break;
             case VEHICLE_TYPES.SUV:
-                return this.createSUVMesh(isStealth);
+                group = this.createSUVMesh(isStealth);
+                break;
             case VEHICLE_TYPES.SEDAN:
-                return this.createSedanMesh(isStealth);
+                group = this.createSedanMesh(isStealth);
+                break;
             default:
-                return this.createCarMesh(isStealth);
+                group = this.createCarMesh(isStealth);
+                break;
         }
+        // Merge static parts by material: ~25-100 meshes per vehicle → ~8-12.
+        // Lights, targets and the rider-detail subgroup are preserved.
+        return this.optimizeVehicle(group);
+    }
+
+    // Flatten every static mesh in the group into one merged mesh per
+    // (material, detail-flag), baking local transforms. Runs once per pooled
+    // vehicle at build time — zero per-frame cost, far fewer draw calls and
+    // shadow casters at runtime.
+    optimizeVehicle(group) {
+        group.updateMatrixWorld(true);
+        const inv = group.matrixWorld.clone().invert();
+        const buckets = new Map(); // key -> { material, detail, geos, castShadow }
+        const rel = new THREE.Matrix4();
+        const meshes = [];
+        group.traverse(child => { if (child.isMesh) meshes.push(child); });
+        for (const mesh of meshes) {
+            mesh.updateMatrix();
+            rel.copy(inv).multiply(mesh.matrixWorld);
+            let geo = mesh.geometry.clone().applyMatrix4(rel);
+            if (geo.index) geo = geo.toNonIndexed();
+            // Rider limbs live under the riderDetail subgroup so quality
+            // scaling can hide them without touching the merged silhouette.
+            let detail = false;
+            let node = mesh.parent;
+            while (node && node !== group) {
+                if (node.name === 'riderDetail') { detail = true; break; }
+                node = node.parent;
+            }
+            const key = `${mesh.material.uuid}:${detail ? 1 : 0}`;
+            let bucket = buckets.get(key);
+            if (!bucket) {
+                bucket = { material: mesh.material, detail, geos: [], castShadow: false, receiveShadow: false };
+                buckets.set(key, bucket);
+            }
+            bucket.geos.push(geo);
+            bucket.castShadow = bucket.castShadow || mesh.castShadow;
+            bucket.receiveShadow = bucket.receiveShadow || mesh.receiveShadow;
+            mesh.geometry.dispose();
+        }
+        // Remove merged meshes (and the now-empty detail subgroup); keep lights.
+        for (const mesh of meshes) mesh.parent.remove(mesh);
+        for (const bucket of buckets.values()) {
+            const merged = mergeGeometries(bucket.geos, false);
+            for (const geo of bucket.geos) geo.dispose();
+            const mergedMesh = new THREE.Mesh(merged, bucket.material);
+            mergedMesh.castShadow = bucket.castShadow;
+            mergedMesh.receiveShadow = bucket.receiveShadow;
+            if (bucket.material === group.userData.bodyMat) mergedMesh.userData.isBody = true;
+            if (bucket.detail) {
+                let detailGroup = group.userData.riderDetail;
+                if (!detailGroup || !detailGroup.parent) {
+                    detailGroup = new THREE.Group();
+                    detailGroup.name = 'riderDetail';
+                    group.add(detailGroup);
+                    group.userData.riderDetail = detailGroup;
+                }
+                detailGroup.add(mergedMesh);
+            } else {
+                group.add(mergedMesh);
+            }
+        }
+        if (group.userData.riderDetail) {
+            group.userData.riderDetail.visible = this.qualityLevel >= 2;
+        }
+        return group;
     }
 
     getRandomCarColor() {
@@ -267,12 +450,23 @@ export class CarManager {
         return colors[Math.floor(Math.random() * colors.length)];
     }
 
+    cachedBodyMaterial(color, roughness, metalness, isStealth) {
+        if (!this._bodyMatCache) this._bodyMatCache = new Map();
+        const key = `${isStealth ? 's' : 'n'}:${color}:${roughness}:${metalness}`;
+        let mat = this._bodyMatCache.get(key);
+        if (!mat) {
+            mat = new THREE.MeshStandardMaterial({
+                color: isStealth ? 0x111111 : color,
+                roughness: isStealth ? 0.95 : roughness,
+                metalness: isStealth ? 0.1 : metalness
+            });
+            this._bodyMatCache.set(key, mat);
+        }
+        return mat;
+    }
+
     createBodyMaterial(isStealth, color) {
-        return new THREE.MeshStandardMaterial({
-            color: isStealth ? 0x111111 : color,
-            roughness: isStealth ? 0.92 : 0.22,
-            metalness: isStealth ? 0.15 : 0.72
-        });
+        return this.cachedBodyMaterial(color, 0.22, 0.72, isStealth);
     }
 
     // Side-profile points [lengthZ, heightY] → smooth extruded body (Tesla silhouette)
@@ -472,6 +666,7 @@ export class CarManager {
         this.addTeslaLights(group, isStealth, 2.12, -2.14, 0.58);
 
         group.userData.isModel3 = true;
+        group.userData.bodyMat = bodyMat;
         return group;
     }
 
@@ -639,11 +834,7 @@ export class CarManager {
         // Cybertruck-style angular EV pickup — stainless wedge, LED bar, vault bed.
         const group = new THREE.Group();
         const stainlessColor = isStealth ? 0x111111 : 0xb9bdc2;
-        const bodyMat = new THREE.MeshStandardMaterial({
-            color: stainlessColor,
-            roughness: isStealth ? 0.95 : 0.32,
-            metalness: isStealth ? 0.1 : 0.85
-        });
+        const bodyMat = this.cachedBodyMaterial(stainlessColor, 0.32, 0.85, isStealth);
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
         // Angular wedge body (flat panels, sharp crease)
@@ -708,11 +899,7 @@ export class CarManager {
     createSemiMesh(isStealth) {
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
-        const cabMat = new THREE.MeshStandardMaterial({
-            color: bodyColor,
-            roughness: isStealth ? 0.95 : 0.35,
-            metalness: isStealth ? 0.1 : 0.5
-        });
+        const cabMat = this.cachedBodyMaterial(bodyColor, 0.35, 0.5, isStealth);
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
         // Cab body
@@ -908,6 +1095,14 @@ export class CarManager {
         const darkPlastic = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.6, metalness: 0.2 });
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
+        // YXZ so rotation.z leans the bike around its local forward axis.
+        group.rotation.order = 'YXZ';
+
+        // Rider limbs live here; merged separately so low quality can hide them.
+        const riderDetail = new THREE.Group();
+        riderDetail.name = 'riderDetail';
+        group.add(riderDetail);
+
         // ── Wheels (tire + rim + spokes + brake hardware) ──
         this.addMotoWheel(group, 1.1, 0.35);
         this.addMotoWheel(group, -0.7, 0.35);
@@ -1102,14 +1297,14 @@ export class CarManager {
             thigh.position.set(side, 0.86, -0.02);
             thigh.rotation.x = 1.25;
             thigh.rotation.z = side > 0 ? -0.25 : 0.25;
-            group.add(thigh);
+            riderDetail.add(thigh);
             const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.26, 4, 8), leatherMat);
             shin.position.set(side * 1.35, 0.58, -0.10);
             shin.rotation.x = 0.25;
-            group.add(shin);
+            riderDetail.add(shin);
             const boot = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.26), this.sharedMaterials.rubber);
             boot.position.set(side * 1.4, 0.33, -0.12);
-            group.add(boot);
+            riderDetail.add(boot);
         }
         // Torso leaning into the wind
         const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.36, 4, 10), leatherMat);
@@ -1130,15 +1325,15 @@ export class CarManager {
             const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.24, 4, 8), leatherMat);
             upperArm.position.set(side, 1.16, 0.32);
             upperArm.rotation.x = 0.9;
-            group.add(upperArm);
+            riderDetail.add(upperArm);
             const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.26, 4, 8), leatherMat);
             forearm.position.set(side * 1.45, 1.04, 0.55);
             forearm.rotation.x = 1.15;
             forearm.rotation.z = side > 0 ? -0.35 : 0.35;
-            group.add(forearm);
+            riderDetail.add(forearm);
             const glove = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), this.sharedMaterials.rubber);
             glove.position.set(side * 1.95, 0.99, 0.66);
-            group.add(glove);
+            riderDetail.add(glove);
         }
 
         // Helmet (chin bar + visor + spoiler)
@@ -1268,42 +1463,6 @@ export class CarManager {
         });
     }
 
-    addHeadlights(group, zPos, yPos = 0.7) {
-        const headlightGeo = new THREE.SphereGeometry(0.13, 8, 8);
-
-        const leftHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
-        leftHeadlight.position.set(0.6, yPos, zPos);
-        group.add(leftHeadlight);
-
-        const rightHeadlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
-        rightHeadlight.position.set(-0.6, yPos, zPos);
-        group.add(rightHeadlight);
-
-        // Only add a single SpotLight on high quality (not one per headlight)
-        if (this.enableDynamicLights && this.qualityLevel >= 2) {
-            const light = new THREE.SpotLight(0xffffee, 2.5, 25, 0.5, 0.6);
-            light.position.set(0, yPos, zPos);
-            light.target.position.set(0, 0, zPos + 20);
-            light.castShadow = false;
-            light.userData.carHeadlight = true;
-            group.add(light);
-            group.add(light.target);
-        }
-    }
-
-    addTaillights(group, isStealth, zPos) {
-        const taillightGeo = new THREE.BoxGeometry(0.28, 0.18, 0.05);
-        const mat = isStealth ? this.sharedMaterials.taillightOff : this.sharedMaterials.taillightOn;
-
-        const leftTaillight = new THREE.Mesh(taillightGeo, mat);
-        leftTaillight.position.set(0.7, 0.7, zPos);
-        group.add(leftTaillight);
-
-        const rightTaillight = new THREE.Mesh(taillightGeo, mat);
-        rightTaillight.position.set(-0.7, 0.7, zPos);
-        group.add(rightTaillight);
-    }
-
     // ─── SPAWNING & MOVEMENT ───────────────────────────────────────
 
     spawnCar(elapsedTime) {
@@ -1368,7 +1527,9 @@ export class CarManager {
             hasTriggeredNearMiss: false,
             vehicleType: vehicleType,
             curveT: startT,
-            targetPosition: finalPosition.clone()
+            targetPosition: finalPosition.clone(),
+            roll: 0,
+            phase: Math.random() * Math.PI * 2
         };
 
         this.cars.push(car);
@@ -1430,6 +1591,14 @@ export class CarManager {
                 while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
                 car.mesh.rotation.y = currentRotation + angleDiff * 0.1;
 
+                // Motorcycles lean into curvature plus a faint idle sway.
+                if (car.vehicleType === VEHICLE_TYPES.MOTORCYCLE) {
+                    const targetRoll = THREE.MathUtils.clamp(-angleDiff * 6, -0.28, 0.28) +
+                        Math.sin(elapsedTime * 2.2 + car.phase) * 0.02;
+                    car.roll += (targetRoll - car.roll) * Math.min(1, deltaTime * 6);
+                    car.mesh.rotation.z = car.roll;
+                }
+
             } else {
                 // Fallback: straight road movement
                 car.mesh.position.z += car.direction * car.speed * deltaTime;
@@ -1443,6 +1612,7 @@ export class CarManager {
         }
 
         this.updateLightGlows();
+        this.updateHeadlightCones();
     }
 
     // Position the shared glow points at each active car's head/taillights.
@@ -1491,6 +1661,17 @@ export class CarManager {
             colors[idx * 3 + 1] = 0.12;
             colors[idx * 3 + 2] = 0.08;
             idx++;
+            // Motorcycles carry a small strip — double the sample so the
+            // additive Points blob reads at the same distance as car bars.
+            if (isMoto && idx < maxPoints) {
+                positions[idx * 3] = mesh.position.x + cos * 0.12 + sin * backZ;
+                positions[idx * 3 + 1] = y;
+                positions[idx * 3 + 2] = mesh.position.z - sin * 0.12 + cos * backZ;
+                colors[idx * 3] = 1.0;
+                colors[idx * 3 + 1] = 0.12;
+                colors[idx * 3 + 2] = 0.08;
+                idx++;
+            }
         }
 
         this.lightGlows.geometry.setDrawRange(0, idx);
@@ -1610,6 +1791,9 @@ export class CarManager {
         this.lastNearMiss = 0;
         if (this.lightGlows) {
             this.lightGlows.geometry.setDrawRange(0, 0);
+        }
+        if (this.headlightCones) {
+            this.headlightCones.count = 0;
         }
     }
 }

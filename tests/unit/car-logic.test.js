@@ -97,9 +97,13 @@ describe('CarManager logic', () => {
             mirror: new THREE.MeshBasicMaterial()
         };
 
-        const group = manager.createCarMesh(false);
+        manager.enableDynamicLights = false;
+        manager.qualityLevel = 3;
+        // Exercise the real build path including the merge optimizer.
+        const group = manager.createVehicleMesh(false, 'car');
 
-        const bodyMesh = group.children.find(child => child.geometry && child.geometry.type === 'ExtrudeGeometry');
+        // The body shell is merge-optimized: find the merged mesh tagged as body.
+        const bodyMesh = group.children.find(child => child.userData && child.userData.isBody);
         expect(bodyMesh).toBeDefined();
 
         const geometry = bodyMesh.geometry;
