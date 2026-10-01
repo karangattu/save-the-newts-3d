@@ -233,12 +233,14 @@ export class CarManager {
     }
 
     getRandomVehicleType() {
+        // Full traffic mix — cars/SUVs are Model 3 / Y / X family, truck is
+        // Cybertruck-style, semi is Tesla Semi-style, plus motorcycles.
         const rand = Math.random();
-        if (rand < 0.30) return VEHICLE_TYPES.CAR;
-        if (rand < 0.50) return VEHICLE_TYPES.SEDAN;
-        if (rand < 0.70) return VEHICLE_TYPES.SUV;
-        if (rand < 0.85) return VEHICLE_TYPES.TRUCK;
-        if (rand < 0.92) return VEHICLE_TYPES.SEMI;
+        if (rand < 0.32) return VEHICLE_TYPES.CAR;      // Model 3
+        if (rand < 0.52) return VEHICLE_TYPES.SEDAN;    // Model 3 variant
+        if (rand < 0.70) return VEHICLE_TYPES.SUV;      // Model Y / X
+        if (rand < 0.85) return VEHICLE_TYPES.TRUCK;    // Cybertruck-style
+        if (rand < 0.92) return VEHICLE_TYPES.SEMI;     // Tesla Semi-style
         return VEHICLE_TYPES.MOTORCYCLE;
     }
 
@@ -427,24 +429,24 @@ export class CarManager {
     // ─── TESLA-STYLE VEHICLE MESHES ─────────────────────────────────
 
     createCarMesh(isStealth) {
-        // Compact hatchback — Model 3 proportions
+        // Tesla Model 3 — sleek fastback sedan, closed nose, glass roof, aero wheels.
         const group = new THREE.Group();
         const bodyMat = this.createBodyMaterial(isStealth, this.getRandomCarColor());
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
         const profile = [
-            [-2.05, 0.18], // rear bottom
-            [2.05, 0.18],  // front bottom
-            [2.12, 0.34],  // front lip
-            [2.05, 0.58],  // closed nose
-            [1.55, 0.74],  // hood
-            [0.72, 0.80],  // cowl
-            [0.22, 1.28],  // A-pillar / roof front
-            [-0.55, 1.34], // roof
-            [-1.25, 1.12], // fastback
-            [-1.75, 0.78], // deck
-            [-2.12, 0.50], // rear bumper
-            [-2.05, 0.18]
+            [-2.10, 0.18], // rear bottom
+            [2.10, 0.18],  // front bottom
+            [2.18, 0.32],  // front lip (low Model 3 nose)
+            [2.10, 0.55],  // closed nose — no grille
+            [1.60, 0.72],  // frunk / hood leading edge
+            [0.75, 0.80],  // hood / cowl
+            [0.20, 1.26],  // windshield base → A-pillar
+            [-0.60, 1.36], // glass roof peak
+            [-1.30, 1.12], // fastback rear glass
+            [-1.80, 0.78], // short decklid + ducktail
+            [-2.18, 0.48], // rear bumper
+            [-2.10, 0.18]
         ];
 
         const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 1.95, 0.26), bodyMat);
@@ -452,19 +454,91 @@ export class CarManager {
         body.receiveShadow = true;
         group.add(body);
 
+        // Panoramic glass: windshield + roof in one continuous canopy
         this.addGlassCabin(group, glassMat, {
             width: 1.78, height: 0.4, length: 1.65, y: 1.12, z: -0.12, roofY: 1.38
         });
-        this.addTeslaFront(group, bodyMat, 2.08, 0.52);
-        this.addSideMirrors(group, 1.0, 1.18, 0.55);
-        this.addAeroWheels(group, 0.98, 1.35, 0.34);
-        this.addTeslaLights(group, isStealth, 2.1, -2.1, 0.58);
+        // Extra-long roof glass strip — signature Model 3 canopy
+        const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.035, 1.55), glassMat);
+        canopy.position.set(0, 1.40, -0.25);
+        canopy.rotation.x = -0.06;
+        group.add(canopy);
 
+        this.addTeslaFront(group, bodyMat, 2.13, 0.50);
+        this.addModel3Headlights(group, isStealth);
+        this.addModel3Details(group, bodyMat, glassMat);
+        this.addSideMirrors(group, 1.0, 1.16, 0.55);
+        this.addAeroWheels(group, 0.98, 1.35, 0.34);
+        this.addTeslaLights(group, isStealth, 2.12, -2.14, 0.58);
+
+        group.userData.isModel3 = true;
         return group;
     }
 
+    // Model 3 swept-eye LED headlights + flush handles + repeater cameras.
+    addModel3Headlights(group, isStealth) {
+        const headMat = isStealth ? this.sharedMaterials.headlightOff : this.sharedMaterials.headlightGlow;
+        // Angled teardrop lenses sweeping back from the nose
+        const lensGeo = new THREE.BoxGeometry(0.28, 0.07, 0.55);
+        const leftLens = new THREE.Mesh(lensGeo, headMat);
+        leftLens.position.set(0.72, 0.68, 1.88);
+        leftLens.rotation.y = -0.38;
+        leftLens.rotation.z = 0.08;
+        group.add(leftLens);
+        const rightLens = new THREE.Mesh(lensGeo, headMat);
+        rightLens.position.set(-0.72, 0.68, 1.88);
+        rightLens.rotation.y = 0.38;
+        rightLens.rotation.z = -0.08;
+        group.add(rightLens);
+    }
+
+    addModel3Details(group, bodyMat, glassMat) {
+        // Flush door handles — thin dark blades sitting proud of the body
+        const handleGeo = new THREE.BoxGeometry(0.03, 0.035, 0.22);
+        const handleMat = this.sharedMaterials.rubber;
+        const handlePositions = [
+            [0.985, 0.82, 0.45], [-0.985, 0.82, 0.45],
+            [0.985, 0.82, -0.45], [-0.985, 0.82, -0.45]
+        ];
+        for (const [x, y, z] of handlePositions) {
+            const handle = new THREE.Mesh(handleGeo, handleMat);
+            handle.position.set(x, y, z);
+            group.add(handle);
+        }
+
+        // Side repeater cameras on front fenders
+        const camGeo = new THREE.BoxGeometry(0.05, 0.06, 0.16);
+        const camL = new THREE.Mesh(camGeo, this.sharedMaterials.rubber);
+        camL.position.set(1.0, 0.88, 0.78);
+        group.add(camL);
+        const camR = new THREE.Mesh(camGeo, this.sharedMaterials.rubber);
+        camR.position.set(-1.0, 0.88, 0.78);
+        group.add(camR);
+
+        // Door shut lines (subtle dark seams)
+        const seamGeo = new THREE.BoxGeometry(0.012, 0.5, 0.02);
+        for (const side of [0.978, -0.978]) {
+            for (const z of [0.05, -0.75]) {
+                const seam = new THREE.Mesh(seamGeo, this.sharedMaterials.rubber);
+                seam.position.set(side, 0.68, z);
+                group.add(seam);
+            }
+        }
+
+        // Rear diffuser + license recess
+        const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.14, 0.1), this.sharedMaterials.rubber);
+        diffuser.position.set(0, 0.30, -2.14);
+        group.add(diffuser);
+        const plate = new THREE.Mesh(
+            new THREE.BoxGeometry(0.44, 0.12, 0.03),
+            new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 })
+        );
+        plate.position.set(0, 0.52, -2.16);
+        group.add(plate);
+    }
+
     createSedanMesh(isStealth) {
-        // Longer grand tourer — Model S proportions
+        // Model 3 long-range variant — stretched Tesla sedan proportions
         const group = new THREE.Group();
         const bodyMat = this.createBodyMaterial(isStealth, this.getRandomCarColor());
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
@@ -543,106 +617,91 @@ export class CarManager {
         this.addAeroWheels(group, 1.05, 1.45, 0.38);
         this.addTeslaLights(group, isStealth, 2.18, -2.18, 0.62);
 
+        // Model X cues: falcon-door vertical seams + rear spoiler lip
+        const falconGeo = new THREE.BoxGeometry(0.012, 0.62, 0.02);
+        for (const side of [1.058, -1.058]) {
+            for (const z of [0.1, -0.9]) {
+                const seam = new THREE.Mesh(falconGeo, this.sharedMaterials.rubber);
+                seam.position.set(side, 1.0, z);
+                group.add(seam);
+            }
+        }
+        const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.05, 0.28), bodyMat);
+        spoiler.position.set(0, 1.52, -2.05);
+        spoiler.rotation.x = -0.1;
+        group.add(spoiler);
+
+        group.userData.isModelYX = true;
         return group;
     }
 
     createTruckMesh(isStealth) {
+        // Cybertruck-style angular EV pickup — stainless wedge, LED bar, vault bed.
         const group = new THREE.Group();
-        const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
+        const stainlessColor = isStealth ? 0x111111 : 0xb9bdc2;
         const bodyMat = new THREE.MeshStandardMaterial({
-            color: bodyColor,
-            roughness: isStealth ? 0.95 : 0.4,
-            metalness: isStealth ? 0.1 : 0.5
+            color: stainlessColor,
+            roughness: isStealth ? 0.95 : 0.32,
+            metalness: isStealth ? 0.1 : 0.85
         });
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
-        // Pickup cab body
-        const cab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.1, 2.2), bodyMat);
-        cab.position.set(0, 0.9, 1.3);
-        cab.castShadow = true;
-        group.add(cab);
+        // Angular wedge body (flat panels, sharp crease)
+        const profile = [
+            [-2.5, 0.30],
+            [2.45, 0.30],
+            [2.50, 0.55],
+            [1.90, 0.80],
+            [0.60, 0.95],
+            [0.10, 1.55],
+            [-1.10, 1.62],
+            [-1.30, 1.10],
+            [-2.30, 1.02],
+            [-2.55, 0.60],
+            [-2.50, 0.30]
+        ];
+        const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 2.05, 0.34), bodyMat);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        group.add(body);
 
-        // Cabin top
-        const cabTop = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.75, 1.6), bodyMat);
-        cabTop.position.set(0, 1.72, 1.2);
-        cabTop.castShadow = true;
-        group.add(cabTop);
-
-        // Windshield
-        const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.65, 0.08), glassMat);
-        windshield.position.set(0, 1.72, 2.02);
-        windshield.rotation.x = 0.18;
+        // Angular windshield plane (single flat sheet)
+        const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.62, 0.06), glassMat);
+        windshield.position.set(0, 1.28, 0.62);
+        windshield.rotation.x = 0.62;
         group.add(windshield);
 
-        // Rear cab window
-        const rearWin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.45, 0.08), glassMat);
-        rearWin.position.set(0, 1.68, 0.38);
-        group.add(rearWin);
-
-        // Side windows
-        const sideGeo = new THREE.BoxGeometry(0.06, 0.45, 1.0);
+        // Side glass (triangular-ish slabs)
+        const sideGeo = new THREE.BoxGeometry(0.05, 0.42, 1.1);
         const sideL = new THREE.Mesh(sideGeo, glassMat);
-        sideL.position.set(1.0, 1.72, 1.2);
+        sideL.position.set(1.03, 1.22, -0.15);
         group.add(sideL);
         const sideR = new THREE.Mesh(sideGeo, glassMat);
-        sideR.position.set(-1.0, 1.72, 1.2);
+        sideR.position.set(-1.03, 1.22, -0.15);
         group.add(sideR);
 
-        // Truck bed
-        const bed = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.55, 2.8), bodyMat);
-        bed.position.set(0, 0.68, -1.1);
-        group.add(bed);
+        // Vault tonneau cover (flat bed lid)
+        const vault = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.06, 2.2), bodyMat);
+        vault.position.set(0, 1.06, -1.35);
+        vault.rotation.x = 0.06;
+        group.add(vault);
 
-        // Bed side walls
-        const wallMat = bodyMat;
-        const wallGeoSide = new THREE.BoxGeometry(0.1, 0.55, 2.8);
-        const wallL = new THREE.Mesh(wallGeoSide, wallMat);
-        wallL.position.set(1.05, 1.2, -1.1);
-        group.add(wallL);
-        const wallR = new THREE.Mesh(wallGeoSide, wallMat);
-        wallR.position.set(-1.05, 1.2, -1.1);
-        group.add(wallR);
+        // Closed nose + full-width LED bar (no grille on an EV truck)
+        this.addTeslaFront(group, bodyMat, 2.45, 0.55);
+        this.addTeslaLights(group, isStealth, 2.48, -2.55, 0.62);
 
-        // Tailgate
-        const tailgate = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.55, 0.1), wallMat);
-        tailgate.position.set(0, 1.2, -2.5);
-        group.add(tailgate);
+        // Black lower armor cladding instead of chrome
+        const armor = new THREE.Mesh(
+            new THREE.BoxGeometry(2.07, 0.16, 4.4),
+            this.sharedMaterials.rubber
+        );
+        armor.position.set(0, 0.40, 0);
+        group.add(armor);
 
-        // Bed rail caps (chrome)
-        const railCapGeo = new THREE.BoxGeometry(0.14, 0.06, 2.8);
-        const railCapL = new THREE.Mesh(railCapGeo, this.sharedMaterials.chrome);
-        railCapL.position.set(1.05, 1.5, -1.1);
-        group.add(railCapL);
-        const railCapR = new THREE.Mesh(railCapGeo, this.sharedMaterials.chrome);
-        railCapR.position.set(-1.05, 1.5, -1.1);
-        group.add(railCapR);
+        this.addSideMirrors(group, 1.08, 1.35, 0.75);
+        this.addAeroWheels(group, 1.02, 1.6, 0.42);
 
-        // Front bumper
-        const bumperF = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.28, 0.2), this.sharedMaterials.chrome);
-        bumperF.position.set(0, 0.42, 2.45);
-        group.add(bumperF);
-
-        // Grille
-        const grille = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.4, 0.06), this.sharedMaterials.rubber);
-        grille.position.set(0, 0.7, 2.42);
-        group.add(grille);
-
-        // Step bars
-        const stepGeo = new THREE.BoxGeometry(0.2, 0.08, 1.6);
-        const stepL = new THREE.Mesh(stepGeo, this.sharedMaterials.chrome);
-        stepL.position.set(1.15, 0.3, 0.4);
-        group.add(stepL);
-        const stepR = new THREE.Mesh(stepGeo, this.sharedMaterials.chrome);
-        stepR.position.set(-1.15, 0.3, 0.4);
-        group.add(stepR);
-
-        // Side mirrors
-        this.addSideMirrors(group, 1.12, 1.6, 1.8);
-
-        this.addWheels(group, 1.0, 1.6, 0.4);
-        if (!isStealth) this.addHeadlights(group, 2.45);
-        this.addTaillights(group, isStealth, -2.55);
-
+        group.userData.isCybertruck = true;
         return group;
     }
 
@@ -687,59 +746,45 @@ export class CarManager {
         sideR.position.set(-1.22, 2.0, 3);
         group.add(sideR);
 
-        // Front bumper (heavy)
-        const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.4, 0.3), this.sharedMaterials.chrome);
+        // Tesla Semi: body-color aero bumper, closed nose (no grille, no diesel parts)
+        const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.4, 0.3), cabMat);
         bumper.position.set(0, 0.5, 4.35);
         group.add(bumper);
 
-        // Big grille
-        const grille = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 0.06), this.sharedMaterials.rubber);
-        grille.position.set(0, 0.9, 4.28);
-        group.add(grille);
+        // Closed aero panel + thin lower intake
+        const aeroPanel = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 0.06), cabMat);
+        aeroPanel.position.set(0, 0.95, 4.28);
+        group.add(aeroPanel);
+        const intake = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 0.06), this.sharedMaterials.rubber);
+        intake.position.set(0, 0.62, 4.30);
+        group.add(intake);
 
-        // Fuel tanks (side cylinders)
-        const tankGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 10);
-        tankGeo.rotateX(Math.PI / 2);
-        const tankL = new THREE.Mesh(tankGeo, this.sharedMaterials.chrome);
-        tankL.position.set(1.35, 0.5, 2.2);
-        group.add(tankL);
-        const tankR = new THREE.Mesh(tankGeo, this.sharedMaterials.chrome);
-        tankR.position.set(-1.35, 0.5, 2.2);
-        group.add(tankR);
+        // Aero side skirts instead of fuel tanks
+        const skirtGeo = new THREE.BoxGeometry(0.25, 0.5, 1.8);
+        const skirtL = new THREE.Mesh(skirtGeo, cabMat);
+        skirtL.position.set(1.30, 0.5, 2.2);
+        group.add(skirtL);
+        const skirtR = new THREE.Mesh(skirtGeo, cabMat);
+        skirtR.position.set(-1.30, 0.5, 2.2);
+        group.add(skirtR);
 
-        // Steps on cab
+        // Flush steps
         const stepGeo = new THREE.BoxGeometry(0.3, 0.08, 0.6);
-        const stepL = new THREE.Mesh(stepGeo, this.sharedMaterials.chrome);
+        const stepL = new THREE.Mesh(stepGeo, this.sharedMaterials.rubber);
         stepL.position.set(1.25, 0.3, 3.5);
         group.add(stepL);
-        const stepR = new THREE.Mesh(stepGeo, this.sharedMaterials.chrome);
+        const stepR = new THREE.Mesh(stepGeo, this.sharedMaterials.rubber);
         stepR.position.set(-1.25, 0.3, 3.5);
         group.add(stepR);
 
-        // Side mirrors (large)
-        const mirrorArmGeo = new THREE.BoxGeometry(0.6, 0.05, 0.05);
-        const mirrorFaceGeo = new THREE.BoxGeometry(0.08, 0.3, 0.25);
-        const mirrorArmL = new THREE.Mesh(mirrorArmGeo, this.sharedMaterials.rubber);
-        mirrorArmL.position.set(1.5, 2.1, 3.8);
-        group.add(mirrorArmL);
-        const mirrorFaceL = new THREE.Mesh(mirrorFaceGeo, this.sharedMaterials.mirror);
-        mirrorFaceL.position.set(1.8, 2.0, 3.8);
-        group.add(mirrorFaceL);
-        const mirrorArmR = new THREE.Mesh(mirrorArmGeo, this.sharedMaterials.rubber);
-        mirrorArmR.position.set(-1.5, 2.1, 3.8);
-        group.add(mirrorArmR);
-        const mirrorFaceR = new THREE.Mesh(mirrorFaceGeo, this.sharedMaterials.mirror);
-        mirrorFaceR.position.set(-1.8, 2.0, 3.8);
-        group.add(mirrorFaceR);
-
-        // Exhaust stacks (vertical pipes)
-        const exhaustGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 8);
-        const exhaustL = new THREE.Mesh(exhaustGeo, this.sharedMaterials.chrome);
-        exhaustL.position.set(1.1, 2.8, 2);
-        group.add(exhaustL);
-        const exhaustR = new THREE.Mesh(exhaustGeo, this.sharedMaterials.chrome);
-        exhaustR.position.set(-1.1, 2.8, 2);
-        group.add(exhaustR);
+        // Camera pods instead of large diesel mirrors (Tesla Semi has no big mirrors)
+        const podGeo = new THREE.BoxGeometry(0.18, 0.1, 0.3);
+        const podL = new THREE.Mesh(podGeo, this.sharedMaterials.rubber);
+        podL.position.set(1.30, 2.1, 3.8);
+        group.add(podL);
+        const podR = new THREE.Mesh(podGeo, this.sharedMaterials.rubber);
+        podR.position.set(-1.30, 2.1, 3.8);
+        group.add(podR);
 
         // Trailer
         const trailerMat = new THREE.MeshStandardMaterial({
@@ -784,14 +829,75 @@ export class CarManager {
         // Wheels - trailer back
         this.addWheels(group, 1.2, 0.8, 0.42, -3.5);
 
-        if (!isStealth) this.addHeadlights(group, 4.35, 0.9);
-        this.addTaillights(group, isStealth, -6.52);
+        this.addTeslaLights(group, isStealth, 4.32, -6.52, 0.95);
 
         group.userData.isLarge = true;
         return group;
     }
 
+    // Helper: realistic spoked wheel with tire, rim, spokes, brake disc + caliper.
+    addMotoWheel(group, z, radius = 0.35) {
+        const y = radius;
+        // Tire (torus) — axle along X
+        const tire = new THREE.Mesh(
+            new THREE.TorusGeometry(radius - 0.075, 0.075, 10, 22),
+            this.sharedMaterials.wheel
+        );
+        tire.rotation.y = Math.PI / 2;
+        tire.position.set(0, y, z);
+        tire.castShadow = true;
+        group.add(tire);
+
+        // Rim ring
+        const rim = new THREE.Mesh(
+            new THREE.TorusGeometry(radius * 0.52, 0.022, 8, 20),
+            this.sharedMaterials.hubcap
+        );
+        rim.rotation.y = Math.PI / 2;
+        rim.position.set(0, y, z);
+        group.add(rim);
+
+        // Spokes (5 thin blades in the YZ plane)
+        const spokeLen = radius * 0.95;
+        const spokeGeo = new THREE.BoxGeometry(0.022, spokeLen, 0.035);
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2;
+            const spoke = new THREE.Mesh(spokeGeo, this.sharedMaterials.hubcap);
+            spoke.position.set(0, y, z);
+            spoke.rotation.x = a;
+            // Offset so each spoke runs hub → rim instead of through the hub
+            spoke.translateY(spokeLen * 0.5 - 0.03);
+            group.add(spoke);
+        }
+
+        // Hub
+        const hub = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.05, 0.05, 0.09, 10),
+            this.sharedMaterials.hubcap
+        );
+        hub.rotation.z = Math.PI / 2;
+        hub.position.set(0, y, z);
+        group.add(hub);
+
+        // Brake disc (steel) + caliper (dark) on the left side
+        const disc = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius * 0.42, radius * 0.42, 0.02, 18),
+            this.sharedMaterials.chrome
+        );
+        disc.rotation.z = Math.PI / 2;
+        disc.position.set(0.055, y, z);
+        group.add(disc);
+        const caliper = new THREE.Mesh(
+            new THREE.BoxGeometry(0.05, 0.1, 0.07),
+            this.sharedMaterials.rubber
+        );
+        caliper.position.set(0.055, y + radius * 0.3, z - radius * 0.18);
+        group.add(caliper);
+    }
+
     createMotorcycleMesh(isStealth) {
+        // Realistic sport-touring motorcycle with rider — spoked wheels, fairing,
+        // sculpted tank/tail, detailed engine + exhaust, articulated rider.
         const group = new THREE.Group();
         const bodyColor = isStealth ? 0x111111 : this.getRandomCarColor();
         const bodyMat = new THREE.MeshStandardMaterial({
@@ -799,158 +905,288 @@ export class CarManager {
             roughness: isStealth ? 0.95 : 0.25,
             metalness: isStealth ? 0.1 : 0.75
         });
+        const darkPlastic = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.6, metalness: 0.2 });
+        const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
-        // Frame tube (main spine)
-        const frameGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8);
-        frameGeo.rotateX(Math.PI / 2);
-        const frame = new THREE.Mesh(frameGeo, this.sharedMaterials.rubber);
-        frame.position.set(0, 0.6, 0.1);
-        frame.rotation.x = 0.15;
-        group.add(frame);
+        // ── Wheels (tire + rim + spokes + brake hardware) ──
+        this.addMotoWheel(group, 1.1, 0.35);
+        this.addMotoWheel(group, -0.7, 0.35);
 
-        // Fuel tank (rounded shape)
-        const tankGeo = new THREE.BoxGeometry(0.45, 0.3, 0.9);
-        const tank = new THREE.Mesh(tankGeo, bodyMat);
-        tank.position.set(0, 0.78, 0.2);
-        group.add(tank);
+        // ── Front end: dual forks, triple clamp, fender ──
+        const forkOuterGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.5, 8);
+        const forkInnerGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.35, 8);
+        for (const side of [0.09, -0.09]) {
+            const lower = new THREE.Mesh(forkOuterGeo, darkPlastic);
+            lower.position.set(side, 0.42, 1.02);
+            lower.rotation.x = 0.32;
+            group.add(lower);
+            const stanchion = new THREE.Mesh(forkInnerGeo, this.sharedMaterials.chrome);
+            stanchion.position.set(side, 0.72, 0.90);
+            stanchion.rotation.x = 0.32;
+            group.add(stanchion);
+        }
+        // Triple clamp + steering stem
+        const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.05, 0.12), darkPlastic);
+        clamp.position.set(0, 0.94, 0.80);
+        group.add(clamp);
 
-        // Tank highlight strip
-        const stripGeo = new THREE.BoxGeometry(0.06, 0.32, 0.85);
-        const stripMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 });
-        const strip = new THREE.Mesh(stripGeo, stripMat);
-        strip.position.set(0, 0.78, 0.2);
-        group.add(strip);
-
-        // Engine block
-        const engineGeo = new THREE.BoxGeometry(0.55, 0.25, 0.4);
-        const engine = new THREE.Mesh(engineGeo, this.sharedMaterials.chrome);
-        engine.position.set(0, 0.42, 0);
-        group.add(engine);
-
-        // Exhaust pipe
-        const exhaustGeo = new THREE.CylinderGeometry(0.04, 0.035, 1.2, 8);
-        exhaustGeo.rotateX(Math.PI / 2);
-        const exhaust = new THREE.Mesh(exhaustGeo, this.sharedMaterials.chrome);
-        exhaust.position.set(0.25, 0.33, -0.3);
-        group.add(exhaust);
-        // Exhaust tip
-        const tipGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.15, 8);
-        tipGeo.rotateX(Math.PI / 2);
-        const tip = new THREE.Mesh(tipGeo, this.sharedMaterials.chrome);
-        tip.position.set(0.25, 0.33, -0.9);
-        group.add(tip);
-
-        // Seat
-        const seatGeo = new THREE.BoxGeometry(0.32, 0.12, 0.85);
-        const seat = new THREE.Mesh(seatGeo, this.sharedMaterials.seatBlack);
-        seat.position.set(0, 0.82, -0.35);
-        group.add(seat);
-
-        // Handlebars
-        const handleGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.75, 8);
-        const handles = new THREE.Mesh(handleGeo, this.sharedMaterials.rubber);
-        handles.rotation.z = Math.PI / 2;
-        handles.position.set(0, 1.0, 0.72);
-        group.add(handles);
-
-        // Handlebar grips
-        const gripGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.15, 8);
-        const gripL = new THREE.Mesh(gripGeo, this.sharedMaterials.rubber);
-        gripL.rotation.z = Math.PI / 2;
-        gripL.position.set(0.38, 1.0, 0.72);
-        group.add(gripL);
-        const gripR = new THREE.Mesh(gripGeo, this.sharedMaterials.rubber);
-        gripR.rotation.z = Math.PI / 2;
-        gripR.position.set(-0.38, 1.0, 0.72);
-        group.add(gripR);
-
-        // Front fork
-        const forkGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.65, 8);
-        const fork = new THREE.Mesh(forkGeo, this.sharedMaterials.chrome);
-        fork.rotation.x = 0.3;
-        fork.position.set(0, 0.55, 0.9);
-        group.add(fork);
-
-        // Fender (front)
-        const fenderFGeo = new THREE.BoxGeometry(0.15, 0.06, 0.5);
-        const fenderF = new THREE.Mesh(fenderFGeo, bodyMat);
-        fenderF.position.set(0, 0.7, 1.1);
+        // Front fender hugging the tire (curved segment)
+        const fenderGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.16, 12, 1, true, -0.5, 1.1);
+        const fenderF = new THREE.Mesh(fenderGeo, bodyMat);
+        fenderF.rotation.z = Math.PI / 2;
+        fenderF.rotation.y = Math.PI / 2;
+        fenderF.position.set(0, 0.35, 1.1);
         group.add(fenderF);
 
-        // Fender (rear)
-        const fenderRGeo = new THREE.BoxGeometry(0.15, 0.06, 0.45);
-        const fenderR = new THREE.Mesh(fenderRGeo, bodyMat);
-        fenderR.position.set(0, 0.65, -0.7);
-        group.add(fenderR);
+        // ── Fairing: nose cone + side panels + windscreen ──
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.42), bodyMat);
+        nose.position.set(0, 0.78, 1.02);
+        nose.rotation.x = 0.28;
+        nose.castShadow = true;
+        group.add(nose);
+        for (const side of [0.20, -0.20]) {
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.7), bodyMat);
+            panel.position.set(side, 0.62, 0.68);
+            panel.rotation.x = 0.12;
+            panel.castShadow = true;
+            group.add(panel);
+            // Fairing vent (dark inset)
+            const vent = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.3), darkPlastic);
+            vent.position.set(side + (side > 0 ? 0.035 : -0.035), 0.60, 0.68);
+            group.add(vent);
+        }
+        // Clear windscreen
+        const screen = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.34), glassMat);
+        screen.position.set(0, 1.02, 0.86);
+        screen.rotation.x = -0.55;
+        group.add(screen);
 
-        // Wheels (detailed with spokes implied by higher segments)
-        const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.12, 12);
-        const wheelMat = this.sharedMaterials.wheel;
+        // ── Frame: twin spars + swingarm + chain ──
+        for (const side of [0.09, -0.09]) {
+            const spar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 1.1), darkPlastic);
+            spar.position.set(side, 0.68, 0.05);
+            spar.rotation.x = -0.08;
+            group.add(spar);
+            // Swingarm blade pivot → rear axle
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.95), darkPlastic);
+            arm.position.set(side * 1.6, 0.38, -0.28);
+            group.add(arm);
+        }
+        // Rear shock
+        const shock = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 8), this.sharedMaterials.turnSignal);
+        shock.position.set(0, 0.55, -0.45);
+        shock.rotation.x = 0.5;
+        group.add(shock);
+        // Chain (left side) + sprockets
+        const chain = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.85), this.sharedMaterials.rubber);
+        chain.position.set(-0.12, 0.36, -0.28);
+        group.add(chain);
+        const sprocket = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.02, 12), this.sharedMaterials.hubcap);
+        sprocket.rotation.z = Math.PI / 2;
+        sprocket.position.set(-0.12, 0.35, -0.7);
+        group.add(sprocket);
 
-        const frontWheel = new THREE.Mesh(wheelGeo, wheelMat);
-        frontWheel.rotation.z = Math.PI / 2;
-        frontWheel.position.set(0, 0.35, 1.1);
-        group.add(frontWheel);
-        // Front hub
-        const hubGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.14, 12);
-        const frontHub = new THREE.Mesh(hubGeo, this.sharedMaterials.hubcap);
-        frontHub.rotation.z = Math.PI / 2;
-        frontHub.position.set(0, 0.35, 1.1);
-        group.add(frontHub);
+        // ── Sculpted fuel tank + cap ──
+        const tankGeo = new THREE.SphereGeometry(0.5, 14, 12);
+        const tank = new THREE.Mesh(tankGeo, bodyMat);
+        tank.scale.set(0.46, 0.30, 0.85);
+        tank.position.set(0, 0.82, 0.15);
+        tank.castShadow = true;
+        group.add(tank);
+        // Knee dents (dark scallops each side)
+        for (const side of [0.20, -0.20]) {
+            const dent = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), darkPlastic);
+            dent.scale.set(0.4, 0.7, 1.2);
+            dent.position.set(side, 0.76, 0.05);
+            group.add(dent);
+        }
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 10), this.sharedMaterials.chrome);
+        cap.position.set(0, 0.965, 0.22);
+        group.add(cap);
 
-        const backWheel = new THREE.Mesh(wheelGeo, wheelMat);
-        backWheel.rotation.z = Math.PI / 2;
-        backWheel.position.set(0, 0.35, -0.7);
-        group.add(backWheel);
-        // Rear hub
-        const rearHub = new THREE.Mesh(hubGeo, this.sharedMaterials.hubcap);
-        rearHub.rotation.z = Math.PI / 2;
-        rearHub.position.set(0, 0.35, -0.7);
-        group.add(rearHub);
+        // ── Engine: crankcase + cooling fins + radiator + exhaust ──
+        const crank = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.28, 0.45), this.sharedMaterials.hubcap);
+        crank.position.set(0, 0.42, 0.15);
+        group.add(crank);
+        for (let i = 0; i < 4; i++) {
+            const fin = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.02, 0.4), darkPlastic);
+            fin.position.set(0, 0.36 + i * 0.055, 0.15);
+            group.add(fin);
+        }
+        const radiator = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.28, 0.06), darkPlastic);
+        radiator.position.set(0, 0.52, 0.62);
+        radiator.rotation.x = 0.25;
+        group.add(radiator);
+        // Headers → collector → muffler (right side)
+        for (const side of [0.08, -0.08]) {
+            const header = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.5, 8), this.sharedMaterials.chrome);
+            header.position.set(side, 0.38, 0.42);
+            header.rotation.x = 1.1;
+            group.add(header);
+        }
+        const midPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 8), this.sharedMaterials.chrome);
+        midPipe.rotation.x = Math.PI / 2;
+        midPipe.position.set(0.16, 0.30, -0.15);
+        group.add(midPipe);
+        const mufflerGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.55, 10);
+        mufflerGeo.rotateX(Math.PI / 2);
+        const muffler = new THREE.Mesh(mufflerGeo, this.sharedMaterials.chrome);
+        muffler.position.set(0.24, 0.34, -0.62);
+        group.add(muffler);
+        const tipGeo = new THREE.CylinderGeometry(0.058, 0.058, 0.05, 10);
+        tipGeo.rotateX(Math.PI / 2);
+        const tip = new THREE.Mesh(tipGeo, darkPlastic);
+        tip.position.set(0.24, 0.34, -0.90);
+        group.add(tip);
 
-        // Rider
-        const riderMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+        // ── Seat + tail unit ──
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.09, 0.5), this.sharedMaterials.seatBlack);
+        seat.position.set(0, 0.86, -0.30);
+        group.add(seat);
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.28), this.sharedMaterials.seatBlack);
+        pad.position.set(0, 0.90, -0.60);
+        group.add(pad);
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.5), bodyMat);
+        tail.position.set(0, 0.92, -0.72);
+        tail.rotation.x = -0.18;
+        tail.castShadow = true;
+        group.add(tail);
+        // Rear hugger fender over the wheel
+        const hugger = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.04, 0.4), darkPlastic);
+        hugger.position.set(0, 0.62, -0.70);
+        group.add(hugger);
 
-        // Lower body/legs
-        const legsGeo = new THREE.BoxGeometry(0.3, 0.2, 0.5);
-        const legs = new THREE.Mesh(legsGeo, riderMat);
-        legs.position.set(0, 0.88, -0.1);
-        group.add(legs);
+        // ── Controls: clip-ons, grips, levers, mirrors, pegs ──
+        for (const side of [1, -1]) {
+            const clip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3, 8), darkPlastic);
+            clip.rotation.z = Math.PI / 2;
+            clip.rotation.y = side * 0.35;
+            clip.position.set(side * 0.24, 0.98, 0.72);
+            group.add(clip);
+            const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.14, 8), this.sharedMaterials.rubber);
+            grip.rotation.z = Math.PI / 2;
+            grip.position.set(side * 0.38, 0.98, 0.66);
+            group.add(grip);
+            // Brake/clutch lever
+            const lever = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.015, 0.03), this.sharedMaterials.chrome);
+            lever.position.set(side * 0.32, 0.96, 0.76);
+            lever.rotation.y = side * 0.3;
+            group.add(lever);
+            // Mirror stalk + head
+            const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6), darkPlastic);
+            stalk.position.set(side * 0.26, 1.10, 0.74);
+            stalk.rotation.z = side * -0.4;
+            group.add(stalk);
+            const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.04), darkPlastic);
+            mirror.position.set(side * 0.32, 1.20, 0.74);
+            group.add(mirror);
+            const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.01), this.sharedMaterials.mirror);
+            mirrorGlass.position.set(side * 0.32, 1.20, 0.765);
+            group.add(mirrorGlass);
+            // Foot peg + boot anchor
+            const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.1, 8), this.sharedMaterials.rubber);
+            peg.rotation.z = Math.PI / 2;
+            peg.position.set(side * 0.22, 0.32, -0.15);
+            group.add(peg);
+        }
 
-        // Torso
-        const torsoGeo = new THREE.CapsuleGeometry(0.14, 0.38, 4, 8);
-        const torso = new THREE.Mesh(torsoGeo, riderMat);
-        torso.rotation.x = 0.35;
-        torso.position.set(0, 1.12, 0.05);
+        // ── Rider: leathers, limbs to bars/pegs, helmet with visor ──
+        const leatherMat = new THREE.MeshStandardMaterial({ color: isStealth ? 0x0a0a0a : 0x1d1d20, roughness: 0.7 });
+        // Hips on seat
+        const hips = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.3), leatherMat);
+        hips.position.set(0, 0.95, -0.32);
+        group.add(hips);
+        // Thighs (hips → knees hugging tank) + shins (knees → pegs) + boots
+        for (const side of [0.13, -0.13]) {
+            const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.28, 4, 8), leatherMat);
+            thigh.position.set(side, 0.86, -0.02);
+            thigh.rotation.x = 1.25;
+            thigh.rotation.z = side > 0 ? -0.25 : 0.25;
+            group.add(thigh);
+            const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.26, 4, 8), leatherMat);
+            shin.position.set(side * 1.35, 0.58, -0.10);
+            shin.rotation.x = 0.25;
+            group.add(shin);
+            const boot = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.26), this.sharedMaterials.rubber);
+            boot.position.set(side * 1.4, 0.33, -0.12);
+            group.add(boot);
+        }
+        // Torso leaning into the wind
+        const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.36, 4, 10), leatherMat);
+        torso.rotation.x = 0.85;
+        torso.position.set(0, 1.18, -0.02);
+        torso.castShadow = true;
         group.add(torso);
+        // Race hump behind the neck
+        const hump = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), leatherMat);
+        hump.scale.set(1, 0.7, 1.3);
+        hump.position.set(0, 1.28, -0.28);
+        group.add(hump);
+        // Shoulders + arms bent to the clip-ons + gloves
+        for (const side of [0.19, -0.19]) {
+            const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 8), leatherMat);
+            shoulder.position.set(side, 1.28, 0.12);
+            group.add(shoulder);
+            const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.24, 4, 8), leatherMat);
+            upperArm.position.set(side, 1.16, 0.32);
+            upperArm.rotation.x = 0.9;
+            group.add(upperArm);
+            const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.26, 4, 8), leatherMat);
+            forearm.position.set(side * 1.45, 1.04, 0.55);
+            forearm.rotation.x = 1.15;
+            forearm.rotation.z = side > 0 ? -0.35 : 0.35;
+            group.add(forearm);
+            const glove = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), this.sharedMaterials.rubber);
+            glove.position.set(side * 1.95, 0.99, 0.66);
+            group.add(glove);
+        }
 
-        // Helmet
-        const helmetGeo = new THREE.SphereGeometry(0.16, 10, 10);
+        // Helmet (chin bar + visor + spoiler)
         const helmetMat = new THREE.MeshStandardMaterial({
             color: isStealth ? 0x050505 : (Math.random() > 0.5 ? 0x222222 : bodyColor),
             roughness: 0.25, metalness: 0.3
         });
-        const helmet = new THREE.Mesh(helmetGeo, helmetMat);
-        helmet.position.set(0, 1.42, 0.32);
+        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.155, 14, 12), helmetMat);
+        helmet.position.set(0, 1.44, 0.28);
+        helmet.castShadow = true;
         group.add(helmet);
-
-        // Visor
-        const visorGeo = new THREE.BoxGeometry(0.28, 0.1, 0.08);
+        const chinBar = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.16), helmetMat);
+        chinBar.position.set(0, 1.37, 0.38);
+        group.add(chinBar);
         const visorMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
-        const visor = new THREE.Mesh(visorGeo, visorMat);
-        visor.position.set(0, 1.4, 0.47);
+        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.09, 0.06), visorMat);
+        visor.position.set(0, 1.44, 0.415);
+        visor.rotation.x = -0.15;
         group.add(visor);
+        const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.08), helmetMat);
+        spoiler.position.set(0, 1.50, 0.14);
+        spoiler.rotation.x = 0.4;
+        group.add(spoiler);
 
-        // Headlight
+        // Dual LED headlights in the nose
         if (!isStealth) {
-            const headlightGeo = new THREE.SphereGeometry(0.08, 10, 10);
-            const headlight = new THREE.Mesh(headlightGeo, this.sharedMaterials.headlightGlow);
-            headlight.position.set(0, 0.72, 1.22);
-            group.add(headlight);
+            for (const side of [0.09, -0.09]) {
+                const lamp = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.055, 10, 10),
+                    this.sharedMaterials.headlightGlow
+                );
+                lamp.position.set(side, 0.76, 1.22);
+                lamp.scale.set(1, 0.7, 0.6);
+                group.add(lamp);
+            }
+            // Front turn signals on stalks
+            for (const side of [0.22, -0.22]) {
+                const signal = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.06, 0.05, 0.04),
+                    this.sharedMaterials.turnSignal
+                );
+                signal.position.set(side, 0.82, 0.98);
+                group.add(signal);
+            }
 
             if (this.enableDynamicLights && this.qualityLevel >= 2) {
                 const light = new THREE.SpotLight(0xffffee, 1.5, 25, 0.4, 0.5);
-                light.position.set(0, 0.72, 1.22);
+                light.position.set(0, 0.76, 1.22);
                 light.target.position.set(0, 0, 15);
                 light.userData.carHeadlight = true;
                 group.add(light);
@@ -958,18 +1194,25 @@ export class CarManager {
             }
         }
 
-        // Taillight
-        const taillightGeo = new THREE.BoxGeometry(0.15, 0.1, 0.05);
+        // LED taillight strip + rear signals + plate
         const tailMat = isStealth ? this.sharedMaterials.taillightOff : this.sharedMaterials.taillightOn;
-        const taillight = new THREE.Mesh(taillightGeo, tailMat);
-        taillight.position.set(0, 0.62, -0.95);
+        const taillight = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 0.04), tailMat);
+        taillight.position.set(0, 0.92, -0.975);
         group.add(taillight);
-
-        // License plate (tiny detail)
-        const plateGeo = new THREE.BoxGeometry(0.15, 0.08, 0.02);
-        const plateMat = new THREE.MeshStandardMaterial({ color: 0xffffee, roughness: 0.5 });
-        const plate = new THREE.Mesh(plateGeo, plateMat);
-        plate.position.set(0, 0.52, -0.96);
+        for (const side of [0.14, -0.14]) {
+            const signal = new THREE.Mesh(
+                new THREE.BoxGeometry(0.05, 0.04, 0.03),
+                this.sharedMaterials.turnSignal
+            );
+            signal.position.set(side, 0.86, -0.96);
+            group.add(signal);
+        }
+        const plate = new THREE.Mesh(
+            new THREE.BoxGeometry(0.15, 0.1, 0.02),
+            new THREE.MeshStandardMaterial({ color: 0xffffee, roughness: 0.5 })
+        );
+        plate.position.set(0, 0.72, -0.96);
+        plate.rotation.x = -0.2;
         group.add(plate);
 
         group.userData.isMotorcycle = true;
@@ -1218,8 +1461,11 @@ export class CarManager {
             const mesh = car.mesh;
             const isSemi = car.vehicleType === VEHICLE_TYPES.SEMI;
             const isMoto = car.vehicleType === VEHICLE_TYPES.MOTORCYCLE;
-            const frontZ = isSemi ? 4.3 : (isMoto ? 1.2 : 2.3);
-            const backZ = isSemi ? -6.5 : (isMoto ? -0.95 : -2.3);
+            const isTruck = car.vehicleType === VEHICLE_TYPES.TRUCK;
+            const isSUV = car.vehicleType === VEHICLE_TYPES.SUV;
+            const isSedan = car.vehicleType === VEHICLE_TYPES.SEDAN;
+            const frontZ = isSemi ? 4.32 : (isMoto ? 1.2 : (isTruck ? 2.48 : (isSUV ? 2.18 : (isSedan ? 2.38 : 2.12))));
+            const backZ = isSemi ? -6.52 : (isMoto ? -0.95 : (isTruck ? -2.55 : (isSUV ? -2.18 : (isSedan ? -2.38 : -2.14))));
             const y = isSemi ? 0.9 : 0.7;
             const headlightOffsets = isMoto ? [0] : [-0.62, 0.62];
             if (idx + headlightOffsets.length + 1 > maxPoints) break;

@@ -154,10 +154,10 @@ describe('CarManager logic', () => {
         manager.updateLightGlows();
 
         expect(geometry.drawRange.count).toBe(3);
-        expect(positions[0]).toBeCloseTo(12.3);
+        expect(positions[0]).toBeCloseTo(12.12);
         expect(positions[1]).toBeCloseTo(0.7);
         expect(positions[2]).toBeCloseTo(20.62);
-        expect(positions[3]).toBeCloseTo(12.3);
+        expect(positions[3]).toBeCloseTo(12.12);
         expect(positions[4]).toBeCloseTo(0.7);
         expect(positions[5]).toBeCloseTo(19.38);
     });
