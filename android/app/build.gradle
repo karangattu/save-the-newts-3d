@@ -4,10 +4,10 @@ def appVersionName = project.hasProperty('appVersionName') ? project.property('a
 def appVersionCode = project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 1
 
 android {
-    namespace = "org.hopescorner.savethenewts"
+    namespace = "org.savethenewts"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "org.hopescorner.savethenewts"
+        applicationId "org.savethenewts"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode

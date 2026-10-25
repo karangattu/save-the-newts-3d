@@ -9,7 +9,7 @@ describe('Android packaging config', () => {
     test('Capacitor packages the staged www build', () => {
         const config = JSON.parse(readFileSync(path.join(root, 'capacitor.config.json'), 'utf8'));
 
-        expect(config.appId).toBe('org.hopescorner.savethenewts');
+        expect(config.appId).toBe('org.savethenewts');
         expect(config.appName).toBe('Save the Newts 3D');
         expect(config.webDir).toBe('www');
     });

@@ -1,4 +1,4 @@
-package org.hopescorner.savethenewts;
+package org.savethenewts;
 
 import com.getcapacitor.BridgeActivity;
 

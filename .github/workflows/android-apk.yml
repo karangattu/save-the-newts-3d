@@ -111,6 +111,6 @@ jobs:
           body: |
             Android APK for ${{ github.ref_name }}.
 
-            This is a debug-signed sideload build (`org.hopescorner.savethenewts`).
+            This is a debug-signed sideload build (`org.savethenewts`).
             Install it with `adb install` or by opening the APK on the device.
           prerelease: ${{ contains(github.ref_name, '-') }}

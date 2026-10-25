@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Save the Newts 3D</string>
     <string name="title_activity_main">Save the Newts 3D</string>
-    <string name="package_name">org.hopescorner.savethenewts</string>
-    <string name="custom_url_scheme">org.hopescorner.savethenewts</string>
+    <string name="package_name">org.savethenewts</string>
+    <string name="custom_url_scheme">org.savethenewts</string>
 </resources>
