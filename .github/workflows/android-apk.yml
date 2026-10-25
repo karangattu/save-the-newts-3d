@@ -1,0 +1,116 @@
+name: Android APK
+
+# Every tag pushed from a commit on main produces an installable APK and a
+# GitHub Release asset.
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is not on main. Android APKs are only built for tags on main."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build:web
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Compute version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="${GITHUB_REF_NAME#v}"
+          version_name="${version_name//\//-}"
+          file_name="$version_name"
+          version_code="$(git rev-list --count HEAD)"
+          echo "name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "file=$file_name" >> "$GITHUB_OUTPUT"
+          echo "code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "Building $version_name ($version_code)"
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          ./gradlew assembleDebug --no-daemon \
+            -PappVersionName="${{ steps.version.outputs.name }}" \
+            -PappVersionCode="${{ steps.version.outputs.code }}"
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          apk="save-the-newts-${{ steps.version.outputs.file }}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/$apk"
+          (cd dist && sha256sum "$apk" > "$apk.sha256")
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: save-the-newts-android-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          name: Save the Newts 3D ${{ github.ref_name }}
+          body: |
+            Android APK for ${{ github.ref_name }}.
+
+            This is a debug-signed sideload build (`org.hopescorner.savethenewts`).
+            Install it with `adb install` or by opening the APK on the device.
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,0 +1,10 @@
+{
+  "appId": "org.hopescorner.savethenewts",
+  "appName": "Save the Newts 3D",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#070714",
+    "insetsHandling": "native"
+  }
+}

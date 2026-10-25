@@ -8,16 +8,17 @@ const _normalColor = new THREE.Color(0xfff5e0);
 const _coolColor = new THREE.Color(0xe0f0ff);
 
 export class Flashlight {
-    constructor(camera, scene, isMobile = false) {
+    constructor(camera, scene, isMobile = false, highDetail = !isMobile) {
         this.camera = camera;
         this.scene = scene;
         this.isMobile = isMobile;
+        this.highDetail = highDetail;
 
         this.battery = 100;
         this.baseDrainRate = 2;
         this.drainMultiplier = 1;
 
-        this.maxIntensity = isMobile ? 14 : 60;
+        this.maxIntensity = highDetail ? 60 : 14;
         this.bonusIntensity = this.maxIntensity * 4;
         this.flickerThreshold = 20;
         this.isFlickering = false;
@@ -33,18 +34,18 @@ export class Flashlight {
         this.currentIntensity = this.maxIntensity;
         this.targetIntensity = this.maxIntensity;
         this.currentColorTemp = 0;
-        this.qualityLevel = isMobile ? 1 : 3;
+        this.qualityLevel = highDetail ? 3 : 1;
 
         this.init();
     }
 
     init() {
         this.spotlight = new THREE.SpotLight(0xfff5e0, this.maxIntensity);
-        this.spotlight.angle = this.isMobile ? 0.6 : 0.52;
-        this.spotlight.penumbra = this.isMobile ? 0.6 : 0.55;
-        this.spotlight.decay = this.isMobile ? 1.0 : 0.9;
-        this.spotlight.distance = this.isMobile ? 80 : 85;
-        this.spotlight.castShadow = !this.isMobile;
+        this.spotlight.angle = this.highDetail ? 0.52 : 0.6;
+        this.spotlight.penumbra = this.highDetail ? 0.55 : 0.6;
+        this.spotlight.decay = this.highDetail ? 0.9 : 1.0;
+        this.spotlight.distance = this.highDetail ? 85 : 80;
+        this.spotlight.castShadow = this.highDetail;
 
         this.spotlight.shadow.mapSize.width = 1024;
         this.spotlight.shadow.mapSize.height = 1024;
@@ -66,17 +67,17 @@ export class Flashlight {
         this.camera.add(this.fillLight);
         this.fillLight.position.set(0, 0, 0.5);
 
-        this.outerGlow = new THREE.SpotLight(0xffe8c0, this.isMobile ? 3 : 5);
-        this.outerGlow.angle = this.isMobile ? 0.85 : 0.78;
+        this.outerGlow = new THREE.SpotLight(0xffe8c0, this.highDetail ? 5 : 3);
+        this.outerGlow.angle = this.highDetail ? 0.78 : 0.85;
         this.outerGlow.penumbra = 1.0;
-        this.outerGlow.decay = this.isMobile ? 1.8 : 1.6;
-        this.outerGlow.distance = this.isMobile ? 35 : 38;
+        this.outerGlow.decay = this.highDetail ? 1.6 : 1.8;
+        this.outerGlow.distance = this.highDetail ? 38 : 35;
         this.outerGlow.castShadow = false;
         this.camera.add(this.outerGlow);
         this.outerGlow.position.set(0, 0, 0);
         this.outerGlow.target = this.target;
 
-        if (!this.isMobile) {
+        if (this.highDetail) {
             this.createVolumetricCone();
         }
 
@@ -190,7 +191,7 @@ export class Flashlight {
         this.fillLight.color.copy(this.spotlight.color);
 
         if (this.outerGlow.visible) {
-            const glowBase = this.isMobile ? 3 : 5;
+            const glowBase = this.highDetail ? 5 : 3;
             const glowScale = this.qualityLevel <= 1 ? 0.45 : (this.qualityLevel === 2 ? 0.75 : 1);
             this.outerGlow.intensity = this.isOn && this.battery > 0
                 ? (this.battery / 100) * glowBase * (this.currentIntensity / this.maxIntensity) * glowScale
@@ -211,7 +212,7 @@ export class Flashlight {
     setQualityLevel(level) {
         this.qualityLevel = Math.max(0, Math.min(3, level | 0));
 
-        const shadowEnabled = !this.isMobile && this.qualityLevel >= 2;
+        const shadowEnabled = this.highDetail && this.qualityLevel >= 2;
         this.spotlight.castShadow = shadowEnabled;
 
         const shadowSize = this.qualityLevel <= 1 ? 256 : (this.qualityLevel === 2 ? 512 : 1024);
@@ -219,8 +220,8 @@ export class Flashlight {
         this.spotlight.shadow.mapSize.height = shadowSize;
 
         this.outerGlow.distance = this.qualityLevel <= 1
-            ? (this.isMobile ? 24 : 20)
-            : (this.isMobile ? 35 : 30);
+            ? (this.highDetail ? 20 : 24)
+            : (this.highDetail ? 30 : 35);
 
         // Disable fill and outer glow on lowest quality for major perf win
         if (this.qualityLevel <= 1) {
@@ -313,7 +314,7 @@ export class Flashlight {
         this.spotlight.intensity = this.maxIntensity;
         this.spotlight.color.setHex(0xfff5e0);
         this.fillLight.intensity = 1.6;
-        this.outerGlow.intensity = this.isMobile ? 3 : 5;
+        this.outerGlow.intensity = this.highDetail ? 5 : 3;
         if (this.volumetricCone) {
             this.volumetricCone.visible = true;
             this.coneMaterial.opacity = 0.035;

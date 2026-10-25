@@ -5,11 +5,16 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export class LevelManager {
-    constructor(scene, camera, renderer, isMobile = false) {
+    constructor(scene, camera, renderer, isMobile = false, options = {}) {
         this.scene = scene;
         this.camera = camera;
         this.renderer = renderer;
         this.isMobile = isMobile;
+
+        // highDetail is independent from isMobile: the Android APK keeps touch
+        // controls but uses desktop-grade scene detail and shadows.
+        this.highDetail = options.highDetail ?? !isMobile;
+        this.textureScale = options.textureScale ?? 1;
         this.currentLevel = 1;
 
         this.levelObjects = [];
@@ -18,7 +23,7 @@ export class LevelManager {
         this.roadBounds = null;
 
         // Quality scaling (1 = low, 2 = medium, 3 = high)
-        this.qualityLevel = isMobile ? 1 : 3;
+        this.qualityLevel = this.highDetail ? 3 : 1;
         this.rainUpdateInterval = 3;
         this.rainActiveFraction = 1;
         this.rainFrameCounter = 0;
@@ -273,16 +278,19 @@ export class LevelManager {
     // Asphalt with baked edge lines + center dashes. One canvas tile covers 15m
     // of road (texture repeats along its length), so paint one dash per tile.
     createAsphaltTexture(wetness = 0) {
+        const scale = this.textureScale || 1;
         const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 1024;
+        canvas.width = 512 * scale;
+        canvas.height = 1024 * scale;
         const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
 
         const base = wetness > 0 ? 18 : 26;
         ctx.fillStyle = `rgb(${base},${base},${base + 2})`;
         ctx.fillRect(0, 0, 512, 1024);
 
-        for (let i = 0; i < 5000; i++) {
+        const speckleCount = 5000 * scale * scale;
+        for (let i = 0; i < speckleCount; i++) {
             const g = base + (Math.random() * 28 - 10);
             ctx.fillStyle = `rgba(${g | 0},${g | 0},${(g + 3) | 0},${0.35 + Math.random() * 0.4})`;
             ctx.fillRect(Math.random() * 512, Math.random() * 1024, 1.5, 1.5);
@@ -346,15 +354,18 @@ export class LevelManager {
     }
 
     createGrassTexture() {
+        const scale = this.textureScale || 1;
         const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
+        canvas.width = 512 * scale;
+        canvas.height = 512 * scale;
         const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
 
         ctx.fillStyle = '#0a160a';
         ctx.fillRect(0, 0, 512, 512);
 
-        for (let i = 0; i < 1800; i++) {
+        const clumpCount = 1800 * scale * scale;
+        for (let i = 0; i < clumpCount; i++) {
             const g = 14 + Math.random() * 22;
             ctx.fillStyle = `rgba(${(g * 0.5) | 0},${g | 0},${(g * 0.45) | 0},${0.25 + Math.random() * 0.5})`;
             const r = 3 + Math.random() * 10;
@@ -365,7 +376,8 @@ export class LevelManager {
 
         ctx.strokeStyle = 'rgba(34,60,30,0.6)';
         ctx.lineWidth = 1.2;
-        for (let i = 0; i < 1400; i++) {
+        const bladeCount = 1400 * scale * scale;
+        for (let i = 0; i < bladeCount; i++) {
             const x = Math.random() * 512;
             const y = Math.random() * 512;
             ctx.beginPath();
@@ -388,10 +400,12 @@ export class LevelManager {
     }
 
     createRockTexture() {
+        const scale = this.textureScale || 1;
         const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
+        canvas.width = 512 * scale;
+        canvas.height = 512 * scale;
         const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
 
         ctx.fillStyle = '#3d3a38';
         ctx.fillRect(0, 0, 512, 512);
@@ -402,7 +416,8 @@ export class LevelManager {
             ctx.fillRect(0, y, 512, 6 + Math.random() * 14);
         }
 
-        for (let i = 0; i < 2400; i++) {
+        const grainCount = 2400 * scale * scale;
+        for (let i = 0; i < grainCount; i++) {
             const g = 35 + Math.random() * 45;
             ctx.fillStyle = `rgba(${g | 0},${g | 0},${g | 0},${0.2 + Math.random() * 0.35})`;
             ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 3 + Math.random() * 12);
@@ -678,7 +693,7 @@ export class LevelManager {
 
         const road = new THREE.Mesh(roadGeometry, roadMaterial);
         road.position.y = 0.01;
-        road.receiveShadow = !this.isMobile;
+        road.receiveShadow = this.highDetail;
         this.scene.add(road);
         this.levelObjects.push(road);
 
@@ -834,6 +849,7 @@ export class LevelManager {
         );
         cliffFace.rotation.y = -Math.PI / 2;
         cliffFace.position.set(28, -15, 0);
+        cliffFace.receiveShadow = this.highDetail;
         this.scene.add(cliffFace);
         this.levelObjects.push(cliffFace);
 
@@ -858,12 +874,14 @@ export class LevelManager {
         const leftGrass = new THREE.Mesh(grassGeo, grassMat);
         leftGrass.rotation.x = -Math.PI / 2;
         leftGrass.position.set(-45, -0.01, 0);
+        leftGrass.receiveShadow = this.highDetail;
         this.scene.add(leftGrass);
         this.levelObjects.push(leftGrass);
 
         const rightGrass = new THREE.Mesh(grassGeo, grassMat);
         rightGrass.rotation.x = -Math.PI / 2;
         rightGrass.position.set(45, -0.01, 0);
+        rightGrass.receiveShadow = this.highDetail;
         this.scene.add(rightGrass);
         this.levelObjects.push(rightGrass);
     }
@@ -872,9 +890,11 @@ export class LevelManager {
     // fog silhouettes at multiple depths to work against.
     createEnvironmentLayers() {
         const rockCount = this.getScaledCount(22);
-        const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+        const rockGeo = new THREE.DodecahedronGeometry(1, this.highDetail ? 1 : 0);
         const rockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96, metalness: 0.02 });
         const rocks = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
+        rocks.castShadow = this.highDetail;
+        rocks.receiveShadow = this.highDetail;
 
         const matrix = this._scratchMatrix;
         const quat = this._scratchQuat;
@@ -900,7 +920,7 @@ export class LevelManager {
         if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
 
         const ridgeCount = this.getScaledCount(12);
-        const ridgeGeo = new THREE.ConeGeometry(1, 1, 6);
+        const ridgeGeo = new THREE.ConeGeometry(1, 1, this.highDetail ? 8 : 6);
         const ridgeMat = new THREE.MeshStandardMaterial({
             color: this.currentLevel === 2 ? 0x100912 : 0x05080c,
             roughness: 1,
@@ -922,7 +942,7 @@ export class LevelManager {
         // A second, very distant tree-line silhouette makes the road feel less
         // like a corridor. Flat cones are enough at this distance.
         const silhouetteCount = this.getScaledCount(18);
-        const silhouetteGeo = new THREE.ConeGeometry(1, 1, 5);
+        const silhouetteGeo = new THREE.ConeGeometry(1, 1, this.highDetail ? 7 : 5);
         const silhouetteMat = new THREE.MeshBasicMaterial({
             color: this.currentLevel === 2 ? 0x1b1020 : 0x080d16,
             fog: true
@@ -945,13 +965,16 @@ export class LevelManager {
 
     createTrees(count, side) {
         count = this.getScaledCount(count);
-        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, 6);
+        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 1, this.highDetail ? 8 : 6);
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 1 });
         const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
-        const foliageGeo = new THREE.ConeGeometry(1, 1, 8);
+        trunkMesh.castShadow = this.highDetail;
+        const foliageGeo = new THREE.ConeGeometry(1, 1, this.highDetail ? 10 : 8);
         const foliageMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
         const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
+        foliageMesh.castShadow = this.highDetail;
         const foliageTopMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, count);
+        foliageTopMesh.castShadow = this.highDetail;
 
         const matrix = new THREE.Matrix4();
         const position = new THREE.Vector3();
@@ -1006,10 +1029,11 @@ export class LevelManager {
         const frondsPerFern = 4;
         const total = count * frondsPerFern;
 
-        const frondGeo = new THREE.ConeGeometry(0.3, 1.2, 4);
+        const frondGeo = new THREE.ConeGeometry(0.3, 1.2, this.highDetail ? 6 : 4);
         frondGeo.translate(0, 0.5, 0); // pivot at frond base
         const frondMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
         const mesh = new THREE.InstancedMesh(frondGeo, frondMat, total);
+        mesh.castShadow = this.highDetail;
 
         const matrix = new THREE.Matrix4();
         const position = new THREE.Vector3();
@@ -1089,26 +1113,28 @@ export class LevelManager {
             // Body (olive green / brownish speckled toad body)
             const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a5d32, roughness: 0.8, metalness: 0.05 });
             const body = new THREE.Mesh(
-                new THREE.SphereGeometry(0.1, 8, 8),
+                new THREE.SphereGeometry(0.1, this.highDetail ? 12 : 8, this.highDetail ? 10 : 8),
                 bodyMat
             );
             body.scale.set(1.2, 0.8, 1.4);
             body.position.y = 0.07;
+            body.castShadow = this.highDetail;
             toadGroup.add(body);
 
             // Head
             const head = new THREE.Mesh(
-                new THREE.SphereGeometry(0.07, 8, 8),
+                new THREE.SphereGeometry(0.07, this.highDetail ? 12 : 8, this.highDetail ? 10 : 8),
                 bodyMat
             );
             head.scale.set(1.0, 0.7, 0.9);
             head.position.set(0, 0.08, 0.1);
+            head.castShadow = this.highDetail;
             toadGroup.add(head);
 
             // Eyes
             const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
             [-0.04, 0.04].forEach(xOff => {
-                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), eyeMat);
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, this.highDetail ? 8 : 6, this.highDetail ? 8 : 6), eyeMat);
                 eye.position.set(xOff, 0.12, 0.14);
                 toadGroup.add(eye);
             });
@@ -1147,7 +1173,7 @@ export class LevelManager {
     // ==================== LEVEL 1: CLEAR NIGHT ====================
     createLevel1() {
         this.scene.background = new THREE.Color(0x070714);
-        this.scene.fog = new THREE.FogExp2(0x070714, this.isMobile ? 0.012 : 0.008);
+        this.scene.fog = new THREE.FogExp2(0x070714, this.highDetail ? 0.008 : 0.012);
 
         this.createRoad(0);
         this.createGrass(0x0a1a0a);
@@ -1194,7 +1220,7 @@ export class LevelManager {
     // ==================== LEVEL 2: JUST AFTER SUNSET ====================
     createLevel2() {
         this.scene.background = new THREE.Color(0x0d0714);
-        this.scene.fog = new THREE.FogExp2(0x160b1b, this.isMobile ? 0.017 : 0.012);
+        this.scene.fog = new THREE.FogExp2(0x160b1b, this.highDetail ? 0.012 : 0.017);
 
         this.createRoad(0);
         this.createGrass(0x0d1a0d);
@@ -1270,7 +1296,7 @@ export class LevelManager {
     // ==================== LEVEL 3: RAIN & WIND STORM ====================
     createLevel3() {
         this.scene.background = new THREE.Color(0x040409);
-        this.scene.fog = new THREE.FogExp2(0x080b12, this.isMobile ? 0.035 : 0.025);
+        this.scene.fog = new THREE.FogExp2(0x080b12, this.highDetail ? 0.025 : 0.035);
 
         this.createRoad(1);
         this.createGrass(0x0d260d);
@@ -1434,7 +1460,7 @@ export class LevelManager {
     
     createSplashParticle(x, z) {
         if (this.currentLevel !== 3) return;
-        const maxSplashes = this.isMobile ? 30 : 60;
+        const maxSplashes = this.highDetail ? 60 : 30;
         if (this.splashParticles.length >= maxSplashes) {
             const old = this.splashParticles.shift();
             old.position.set(x, 0.05, z);
@@ -1462,7 +1488,7 @@ export class LevelManager {
             this.splashParticles = [];
             return;
         }
-        if (Math.random() < (this.isMobile ? 0.15 : 0.3)) {
+        if (Math.random() < (this.highDetail ? 0.3 : 0.15)) {
             const x = cameraPosition.x + (Math.random() - 0.5) * 20;
             const z = cameraPosition.z + (Math.random() - 0.5) * 20;
             if (Math.abs(x) < 8) this.createSplashParticle(x, z);

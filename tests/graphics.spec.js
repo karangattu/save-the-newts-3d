@@ -11,6 +11,20 @@ test.describe('Graphics and flashlight enhancements', () => {
         expect(mainJsSource).toContain('THREE.SRGBColorSpace');
     });
 
+    test('runtime assets are vendored for offline and APK builds', async () => {
+        const mainHtmlPath = path.resolve(__dirname, '../index.html');
+        const mainHtmlSource = await fs.readFile(mainHtmlPath, 'utf8');
+
+        expect(mainHtmlSource).not.toContain('cdn.jsdelivr.net');
+        expect(mainHtmlSource).not.toContain('cdnjs.cloudflare.com');
+        expect(mainHtmlSource).not.toContain('fonts.googleapis.com');
+        expect(mainHtmlSource).not.toContain('fonts.gstatic.com');
+        expect(mainHtmlSource).toContain('vendor/three/three.module.min.js');
+        expect(mainHtmlSource).toContain('vendor/fontawesome/css/solid.min.css');
+        expect(mainHtmlSource).toContain('vendor/fontawesome/css/regular.min.css');
+        expect(mainHtmlSource).toContain('vendor/fonts/mona-sans.css');
+    });
+
     test('flashlight creates spotlight and outer glow', async ({ page }) => {
         await page.goto('http://localhost:3000', { waitUntil: 'load' });
 
@@ -67,6 +81,34 @@ test.describe('Graphics and flashlight enhancements', () => {
         expect(mobileConfig.hasVolumetricCone).toBeFalsy();
         expect(mobileConfig.hasOuterGlow).toBeTruthy();
         expect(mobileConfig.maxIntensity).toBe(14);
+    });
+
+    test('high detail mobile enables shadows, cone, and full flashlight range', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const config = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { Flashlight } = await import('/js/flashlight.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+
+            const fl = new Flashlight(camera, scene, true, true);
+
+            return {
+                highDetail: fl.highDetail,
+                maxIntensity: fl.maxIntensity,
+                hasVolumetricCone: !!fl.volumetricCone,
+                castsShadow: fl.spotlight.castShadow,
+                shadowSize: fl.spotlight.shadow.mapSize.width
+            };
+        });
+
+        expect(config.highDetail).toBe(true);
+        expect(config.maxIntensity).toBe(60);
+        expect(config.hasVolumetricCone).toBe(true);
+        expect(config.castsShadow).toBe(true);
+        expect(config.shadowSize).toBe(1024);
     });
 
     test('flashlight intensity lerps smoothly and flicker activates on low battery', async ({ page }) => {
@@ -296,6 +338,43 @@ test.describe('Graphics and flashlight enhancements', () => {
         expect(texturesInfo.bumpHeight).toBe(256);
     });
 
+    test('Android high detail doubles procedural ground texture resolution', async ({ page }) => {
+        await page.goto('http://localhost:3000', { waitUntil: 'load' });
+
+        const texturesInfo = await page.evaluate(async () => {
+            const THREE = await import('three');
+            const { LevelManager } = await import('/js/levels.js');
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.25, 600);
+            const renderer = { capabilities: { getMaxAnisotropy: () => 16 } };
+
+            const levelMgr = new LevelManager(scene, camera, renderer, true, {
+                highDetail: true,
+                textureScale: 2
+            });
+            const asphalt = levelMgr.createAsphaltTexture();
+            const grass = levelMgr.createGrassTexture();
+            const rock = levelMgr.createRockTexture();
+
+            return {
+                asphaltWidth: asphalt.image.width,
+                asphaltHeight: asphalt.image.height,
+                grassWidth: grass.image.width,
+                grassHeight: grass.image.height,
+                rockWidth: rock.image.width,
+                rockHeight: rock.image.height
+            };
+        });
+
+        expect(texturesInfo.asphaltWidth).toBe(1024);
+        expect(texturesInfo.asphaltHeight).toBe(2048);
+        expect(texturesInfo.grassWidth).toBe(1024);
+        expect(texturesInfo.grassHeight).toBe(1024);
+        expect(texturesInfo.rockWidth).toBe(1024);
+        expect(texturesInfo.rockHeight).toBe(1024);
+    });
+
     test('high quality flashlight shadow resolution and bias settings', async ({ page }) => {
         await page.goto('http://localhost:3000', { waitUntil: 'load' });
 
@@ -324,11 +403,11 @@ test.describe('Graphics and flashlight enhancements', () => {
         expect(shadowInfo.shadowNear).toBe(0.5);
     });
 
-    test('Mona Sans font is loaded in index.html and applied to body and buttons', async ({ page }) => {
+    test('Mona Sans font is loaded locally and applied to body and buttons', async ({ page }) => {
         await page.goto('http://localhost:3000', { waitUntil: 'load' });
 
         const fontDetails = await page.evaluate(() => {
-            const fontLink = document.querySelector('link[href*="Mona+Sans"]');
+            const fontLink = document.querySelector('link[href*="mona-sans.css"]');
             const bodyFont = window.getComputedStyle(document.body).fontFamily;
             const buttonFont = window.getComputedStyle(document.querySelector('#start-button')).fontFamily;
 

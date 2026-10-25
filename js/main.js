@@ -9,6 +9,7 @@ import { AudioManager } from './audio.js';
 import { UIManager } from './ui.js';
 import { LeaderboardManager } from './leaderboard.js';
 import { PredatorManager } from './predators.js';
+import { resolveGraphicsProfile } from './quality.js';
 
 class Game {
     constructor() {
@@ -63,6 +64,15 @@ class Game {
         this.ui = new UIManager();
         this.isMobile = this.ui.getIsMobile();
 
+        // Desktop and packaged Android builds start on the full detail preset.
+        // Android APK assets are local, so raise texture resolution as well.
+        this.graphicsProfile = resolveGraphicsProfile({
+            isMobile: this.isMobile,
+            userAgent: navigator.userAgent,
+            search: window.location.search
+        });
+        this.highDetail = this.graphicsProfile.highDetail;
+
         // Create scene renderer and camera first
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(
@@ -76,7 +86,7 @@ class Game {
         this.camera.position.set(0, 1.7, 0);
 
         this.renderer = new THREE.WebGLRenderer({
-            antialias: !this.isMobile,
+            antialias: this.graphicsProfile.antialias,
             powerPreference: 'high-performance',
             precision: 'highp',
             alpha: false,
@@ -84,17 +94,20 @@ class Game {
             depth: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.maxPixelRatio = this.isMobile ? 2 : Math.min(window.devicePixelRatio || 1, 2);
-        this.qualityLevel = this.isMobile ? 1 : 3;
+        this.maxPixelRatio = this.graphicsProfile.maxPixelRatio;
+        this.qualityLevel = this.graphicsProfile.qualityLevel;
         this.renderer.setPixelRatio(this.getTargetPixelRatio());
-        this.renderer.shadowMap.enabled = !this.isMobile;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.enabled = this.graphicsProfile.shadows;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.35;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         // Create level manager
-        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile);
+        this.levelManager = new LevelManager(this.scene, this.camera, this.renderer, this.isMobile, {
+            highDetail: this.highDetail,
+            textureScale: this.graphicsProfile.textureScale
+        });
 
         // Load level 1
         const levelData = this.levelManager.loadLevel(1);
@@ -109,11 +122,12 @@ class Game {
             this.isMobile
         );
 
-        // Create flashlight (brighter on mobile)
+        // Create flashlight (full shadows and volumetric cone on high detail)
         this.flashlight = new Flashlight(
             this.camera,
             this.scene,
-            this.isMobile
+            this.isMobile,
+            this.highDetail
         );
 
         // Create managers
@@ -121,12 +135,12 @@ class Game {
             this.scene,
             this.flashlight,
             this.roadCurve,
-            this.isMobile
+            !this.highDetail
         );
         this.newtManager.prewarmPool(15);
 
         this.carManager = new CarManager(this.scene, this.roadCurve, {
-            isLowEnd: this.isMobile,
+            isLowEnd: !this.highDetail,
             // Per-car SpotLights change the global light count and trigger
             // expensive shader recompiles as traffic spawns. Emissive meshes
             // and the shared glow cloud retain the visible headlight effect.
