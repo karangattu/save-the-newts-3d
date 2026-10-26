@@ -826,7 +826,7 @@ class Game {
         const result = await this.leaderboard.fetchTopScores(5);
 
         if (result.success) {
-            this.ui.renderLeaderboard(result.scores);
+            this.ui.renderLeaderboard(result.scores, result.offline);
         } else {
             this.ui.showLeaderboardError(result.error);
         }
@@ -859,8 +859,10 @@ class Game {
         this.ui.setSubmitButtonLoading(false);
 
         if (result.success) {
-            this.ui.setSubmitStatus('Score submitted successfully!');
-            this.ui.disableScoreSubmission();
+            this.ui.setSubmitStatus(result.pending
+                ? 'Saved on this device. Will sync when connected.'
+                : 'Score saved and synced!');
+            this.ui.disableScoreSubmission(result.pending);
         } else {
             this.ui.setSubmitStatus('Failed to submit: ' + result.error, true);
         }

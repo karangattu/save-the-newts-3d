@@ -7,8 +7,12 @@ Rescue California newts crossing a road at night.
 **Run:** `npm ci && npm run vendor && npm start` (serves on `http://localhost:3000`)
 
 All runtime libraries, icons, and fonts are vendored locally, so the game does
-not need a CDN. The online leaderboard still uses Supabase when a network is
-available.
+not need a CDN. The online leaderboard uses Supabase. Submitting a score saves
+each player's best on the device first, including when offline. Pending scores
+sync automatically when the game is open and connectivity returns, when the app
+resumes, or on the next launch. Failed uploads retry every 30 seconds. Offline,
+the leaderboard shows scores saved on this device. Clearing app data also clears
+these local scores.
 
 ## Android APK
 

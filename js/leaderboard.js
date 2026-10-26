@@ -10,12 +10,73 @@ export class LeaderboardManager {
         this.cachedScores = null;
         this.cacheExpiry = 0;
         this.cacheDuration = 30000; // 30 seconds cache
+        this.storageKey = 'newtRescueLeaderboard';
+        this.syncPromise = null;
+        window.addEventListener('online', () => this.syncPendingScores());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') this.syncPendingScores();
+        });
+        setInterval(() => this.syncPendingScores(), 30000);
+        this.syncPendingScores();
+    }
+
+    readLocalScores() {
+        const scores = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+        if (!Array.isArray(scores)) throw new Error('Invalid saved scores');
+        return scores;
+    }
+
+    bestScores(scores, limit) {
+        const best = new Map();
+        for (const entry of scores) {
+            if (!best.has(entry.player_name) || entry.score > best.get(entry.player_name).score) {
+                best.set(entry.player_name, entry);
+            }
+        }
+        return [...best.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+    }
+
+    localLeaderboard(limit) {
+        try {
+            return { success: true, offline: true, scores: this.bestScores(this.readLocalScores(), limit) };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    syncPendingScores() {
+        if (this.syncPromise) return this.syncPromise;
+        if (navigator.onLine === false) return Promise.resolve();
+        this.syncPromise = Promise.resolve().then(() => this.flushPendingScores())
+            .finally(() => { this.syncPromise = null; });
+        return this.syncPromise;
+    }
+
+    async flushPendingScores() {
+        try {
+            let entry;
+            while ((entry = this.readLocalScores().find(score => score.pending))) {
+                const result = await this.uploadScore(entry);
+                if (!result.success) break;
+                // Re-read after the request so a newer score saved during upload stays queued.
+                const scores = this.readLocalScores();
+                const current = scores.find(score => score.player_name === entry.player_name);
+                if (current && current.score === entry.score) current.pending = false;
+                localStorage.setItem(this.storageKey, JSON.stringify(scores));
+                this.cachedScores = null;
+                this.cacheExpiry = 0;
+            }
+        } catch (error) {
+            console.warn('Score sync deferred:', error.message);
+        }
     }
     
     async fetchTopScores(limit = 5) {
+        if (navigator.onLine === false) return this.localLeaderboard(limit);
+        await this.syncPendingScores();
         // Return cached scores if still valid
         if (this.cachedScores && Date.now() < this.cacheExpiry) {
-            return { success: true, scores: this.cachedScores };
+            return { success: true, scores: this.bestScores([...this.cachedScores, ...this.readLocalScores()], limit) };
         }
         
         this.isLoading = true;
@@ -27,6 +88,7 @@ export class LeaderboardManager {
                 `${this.supabaseUrl}/rest/v1/${this.tableName}?select=*&order=score.desc&limit=${fetchLimit}`,
                 {
                     method: 'GET',
+                    signal: AbortSignal.timeout(10000),
                     headers: {
                         'apikey': this.supabaseKey,
                         'Authorization': `Bearer ${this.supabaseKey}`,
@@ -60,12 +122,11 @@ export class LeaderboardManager {
             this.cacheExpiry = Date.now() + this.cacheDuration;
             
             this.isLoading = false;
-            return { success: true, scores: deduplicatedScores };
+            return { success: true, scores: this.bestScores([...deduplicatedScores, ...this.readLocalScores()], limit) };
             
         } catch (error) {
-            console.error('Error fetching leaderboard:', error);
             this.isLoading = false;
-            return { success: false, error: error.message };
+            return this.localLeaderboard(limit);
         }
     }
     
@@ -76,6 +137,29 @@ export class LeaderboardManager {
         
         // Sanitize player name
         const sanitizedName = playerName.trim().substring(0, 20);
+
+        try {
+            const scores = this.readLocalScores();
+            const existing = scores.find(entry => entry.player_name === sanitizedName);
+            if (!existing || score > existing.score) {
+                const entry = {
+                    player_name: sanitizedName, score, time_survived: Math.floor(timeSurvived),
+                    death_reason: deathReason, created_at: new Date().toISOString(), pending: true
+                };
+                localStorage.setItem(this.storageKey, JSON.stringify([
+                    ...scores.filter(item => item.player_name !== sanitizedName), entry
+                ]));
+            }
+            await this.syncPendingScores();
+            return { success: true, pending: this.readLocalScores().some(entry => entry.player_name === sanitizedName && entry.pending) };
+        } catch (error) {
+            return { success: false, error: 'Could not save score on this device: ' + error.message };
+        }
+    }
+
+    async uploadScore(entry) {
+        const { pending, ...payload } = entry;
+        const { player_name: sanitizedName, score } = entry;
         
         this.isLoading = true;
         
@@ -85,6 +169,7 @@ export class LeaderboardManager {
                 `${this.supabaseUrl}/rest/v1/${this.tableName}?select=*&player_name=eq.${encodeURIComponent(sanitizedName)}&order=score.desc&limit=1`,
                 {
                     method: 'GET',
+                    signal: AbortSignal.timeout(10000),
                     headers: {
                         'apikey': this.supabaseKey,
                         'Authorization': `Bearer ${this.supabaseKey}`,
@@ -105,12 +190,14 @@ export class LeaderboardManager {
                 return { success: true, message: 'Existing score is higher', data: existingScores[0] };
             }
             
-            // Delete old score if exists
+            // Preserve the server's existing replace-by-name contract. The local copy
+            // remains pending if the connection drops between deletion and insertion.
             if (existingScores.length > 0) {
-                await fetch(
+                const deletion = await fetch(
                     `${this.supabaseUrl}/rest/v1/${this.tableName}?player_name=eq.${encodeURIComponent(sanitizedName)}`,
                     {
                         method: 'DELETE',
+                        signal: AbortSignal.timeout(10000),
                         headers: {
                             'apikey': this.supabaseKey,
                             'Authorization': `Bearer ${this.supabaseKey}`,
@@ -118,6 +205,7 @@ export class LeaderboardManager {
                         }
                     }
                 );
+                if (!deletion.ok) throw new Error(`HTTP error replacing score! status: ${deletion.status}`);
             }
             
             // Submit new score
@@ -125,19 +213,14 @@ export class LeaderboardManager {
                 `${this.supabaseUrl}/rest/v1/${this.tableName}`,
                 {
                     method: 'POST',
+                    signal: AbortSignal.timeout(10000),
                     headers: {
                         'apikey': this.supabaseKey,
                         'Authorization': `Bearer ${this.supabaseKey}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=representation'
                     },
-                    body: JSON.stringify({
-                        player_name: sanitizedName,
-                        score: score,
-                        time_survived: Math.floor(timeSurvived),
-                        death_reason: deathReason,
-                        created_at: new Date().toISOString()
-                    })
+                    body: JSON.stringify(payload)
                 }
             );
             
@@ -156,7 +239,6 @@ export class LeaderboardManager {
             return { success: true, data: result };
             
         } catch (error) {
-            console.error('Error submitting score:', error);
             this.isLoading = false;
             return { success: false, error: error.message };
         }

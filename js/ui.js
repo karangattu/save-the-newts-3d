@@ -565,16 +565,17 @@ export class UIManager {
         this.leaderboardModal.classList.add('hidden');
     }
 
-    renderLeaderboard(scores) {
+    renderLeaderboard(scores, offline = false) {
+        const notice = offline ? '<p class="leaderboard-empty">Offline — scores saved on this device. Pending scores sync when connected.</p>' : '';
         if (!scores || scores.length === 0) {
-            this.leaderboardList.innerHTML = '<p class="leaderboard-empty">No scores yet. Be the first!</p>';
+            this.leaderboardList.innerHTML = notice + '<p class="leaderboard-empty">No scores yet. Be the first!</p>';
             return;
         }
 
         const rankClasses = ['gold', 'silver', 'bronze', '', ''];
         const rankIcons = ['🥇', '🥈', '🥉', '4', '5'];
 
-        let html = '';
+        let html = notice;
         scores.forEach((entry, index) => {
             const rankClass = rankClasses[index] || '';
             html += `
@@ -621,10 +622,12 @@ export class UIManager {
         }
     }
 
-    disableScoreSubmission() {
+    disableScoreSubmission(pending = false) {
         if (this.submitScoreBtn) {
             this.submitScoreBtn.disabled = true;
-            this.submitScoreBtn.innerHTML = '<i class="fas fa-check"></i> Submitted!';
+            this.submitScoreBtn.innerHTML = pending
+                ? '<i class="fas fa-check"></i> Saved on device'
+                : '<i class="fas fa-check"></i> Submitted!';
         }
     }
 
