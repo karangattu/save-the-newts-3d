@@ -469,21 +469,49 @@ export class CarManager {
         return this.cachedBodyMaterial(color, 0.22, 0.72, isStealth);
     }
 
-    // Side-profile points [lengthZ, heightY] → smooth extruded body (Tesla silhouette)
-    createSleekBodyGeometry(profile, width, bottomY = 0.28) {
-        const shape = new THREE.Shape();
-        shape.moveTo(profile[0][0], profile[0][1]);
-        for (let i = 1; i < profile.length; i++) {
-            shape.lineTo(profile[i][0], profile[i][1]);
+    // Side-profile points [lengthZ, heightY] → smooth extruded body (Tesla silhouette).
+    // Teslas are defined by continuous, flowing surfaces, so by default the
+    // profile control points are woven through a closed centripetal
+    // Catmull-Rom spline and sampled densely — no faceted straight segments.
+    // Pass smooth=false for intentionally angular designs (Cybertruck).
+    createSleekBodyGeometry(profile, width, bottomY = 0.28, smooth = true) {
+        // Drop a duplicated first point at the end so the closed spline doesn't kink.
+        let pts = profile;
+        const first = profile[0];
+        const last = profile[profile.length - 1];
+        if (profile.length > 2 && first[0] === last[0] && first[1] === last[1]) {
+            pts = profile.slice(0, -1);
         }
-        shape.closePath();
+
+        const shape = new THREE.Shape();
+        if (smooth) {
+            const curve = new THREE.CatmullRomCurve3(
+                pts.map(([z, y]) => new THREE.Vector3(z, y, 0)),
+                true,
+                'centripetal'
+            );
+            const samples = Math.max(96, pts.length * 8);
+            const sampled = [];
+            for (let i = 0; i < samples; i++) {
+                const p = curve.getPoint(i / samples);
+                sampled.push(new THREE.Vector2(p.x, p.y));
+            }
+            shape.setFromPoints(sampled);
+            shape.closePath();
+        } else {
+            shape.moveTo(pts[0][0], pts[0][1]);
+            for (let i = 1; i < pts.length; i++) {
+                shape.lineTo(pts[i][0], pts[i][1]);
+            }
+            shape.closePath();
+        }
 
         const geo = new THREE.ExtrudeGeometry(shape, {
             depth: width,
             bevelEnabled: true,
             bevelThickness: 0.07,
             bevelSize: 0.06,
-            bevelSegments: 3,
+            bevelSegments: 4,
             curveSegments: 1
         });
         // Shape XY = length/height, extrude Z = width → map to X=width, Y=height, Z=length
@@ -851,7 +879,7 @@ export class CarManager {
             [-2.55, 0.60],
             [-2.50, 0.30]
         ];
-        const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 2.05, 0.34), bodyMat);
+        const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 2.05, 0.34, false), bodyMat);
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
