@@ -19,7 +19,9 @@ await rm(vendor, { recursive: true, force: true });
 // Three.js ESM build and the two addons the game imports.
 await copy('three/build/three.module.min.js', 'three/three.module.min.js');
 await copy('three/build/three.core.min.js', 'three/three.core.min.js');
+await copy('three/examples/jsm/loaders/GLTFLoader.js', 'three/addons/loaders/GLTFLoader.js');
 await copy('three/examples/jsm/utils/BufferGeometryUtils.js', 'three/addons/utils/BufferGeometryUtils.js');
+await copy('three/examples/jsm/utils/SkeletonUtils.js', 'three/addons/utils/SkeletonUtils.js');
 await copy('three/examples/jsm/controls/PointerLockControls.js', 'three/addons/controls/PointerLockControls.js');
 await copy('three/LICENSE', 'three/LICENSE');
 

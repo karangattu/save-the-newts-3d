@@ -273,6 +273,17 @@ body {
     flex-shrink: 0;
 }
 
+.model-credits {
+    margin: 18px 0 0;
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.02em;
+}
+
+.model-credits a {
+    color: rgba(255, 255, 255, 0.6);
+}
+
 .sound-notice {
     display: inline-flex;
     align-items: center;
