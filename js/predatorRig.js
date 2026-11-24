@@ -79,7 +79,7 @@ function distPointSegmentSquared(px, py, pz, ax, ay, az, bx, by, bz) {
 
 // Rig a static GLB scene: normalize, build bones, skin the mesh, return the wrapper pieces.
 // `height` is the target height in world units (feet at y = 0, centered on x/z).
-export function rigStaticModel(gltfScene, height) {
+export function rigStaticModel(gltfScene, height, type) {
     let source = null;
     gltfScene.traverse((child) => {
         if (child.isMesh && !source) source = child;
@@ -185,6 +185,7 @@ export function rigStaticModel(gltfScene, height) {
         skeleton,
         bones,
         box,
+        type,
         boneCount: boneNames.length,
         rest: { pelvisY: bones.get('pelvis').position.y }
     };
@@ -205,44 +206,48 @@ export function applyAttackPose(rig, progress, elapsedMs) {
     const bones = rig.bones;
     if (!bones) return;
 
-    const walkPhase = elapsedMs * 0.011;
+    const isBear = rig.type === 'bear';
+    const walkPhase = elapsedMs * (isBear ? 0.008 : 0.011);
 
     const crouch = sstep(progress, 0.0, 0.18) * (1 - sstep(progress, 0.58, 0.76));
-    const walkAmp = 1 - sstep(progress, 0.45, 0.6);
+    const walkAmp = (1 - sstep(progress, 0.45, 0.6)) * (isBear ? 0.75 : 1);
     const pounce = sstep(progress, 0.55, 0.72) * (1 - sstep(progress, 0.8, 0.97));
+    const pounceAmount = pounce * (isBear ? 0.7 : 1);
     const strike = sstep(progress, 0.76, 0.85);
+    // Bears rear into a paw swipe instead of making the cougar's full leap.
+    const swipe = isBear ? sstep(progress, 0.68, 0.8) * (1 - sstep(progress, 0.9, 0.98)) : 0;
 
     const setRot = (name, x, y, z) => { bones.get(name).rotation.set(DEG(x), DEG(y), DEG(z)); };
 
-    // Body core: crouch -> arch -> bite slam
-    setRot('pelvis', crouch * 6 - pounce * 10 + strike * 6, 0, 0);
+    // Body core: crouch -> arch -> bite slam, with a heavier bear swipe.
+    setRot('pelvis', crouch * 6 - pounceAmount * 10 + strike * 6 - swipe * 22, 0, 0);
     bones.get('pelvis').position.y = rig.rest.pelvisY
-        - 0.13 * crouch + 0.12 * pounce - 0.20 * strike;
-    setRot('spine', crouch * 5 - pounce * 12 + strike * 7, 0, Math.sin(walkPhase * 0.5) * 4 * walkAmp);
-    setRot('chest', crouch * 4 - pounce * 6 + strike * 10, 0, Math.sin(walkPhase * 0.5 + 1.2) * 5 * walkAmp);
-    setRot('neck', crouch * 8 - pounce * 2 + strike * 4, 0, 0);
-    setRot('head', crouch * 4 - pounce * 4 + strike * 46, 0, 0);
-    setRot('tail', -strike * 8 - pounce * 25 + walkAmp * (-10 + Math.sin(walkPhase * 0.7) * 7), 0, Math.sin(walkPhase * 0.6) * 8 * walkAmp);
+        - 0.13 * crouch + 0.12 * pounceAmount - 0.20 * strike + 0.06 * swipe;
+    setRot('spine', crouch * 5 - pounceAmount * 12 + strike * 7 - swipe * 12, 0, Math.sin(walkPhase * 0.5) * 4 * walkAmp);
+    setRot('chest', crouch * 4 - pounceAmount * 6 + strike * 10 - swipe * 10, 0, Math.sin(walkPhase * 0.5 + 1.2) * 5 * walkAmp);
+    setRot('neck', crouch * 8 - pounceAmount * 2 + strike * 4 + swipe * 8, 0, 0);
+    setRot('head', crouch * 4 - pounceAmount * 4 + strike * (isBear ? 30 : 46) + swipe * 12, 0, 0);
+    setRot('tail', -strike * 8 - pounceAmount * 25 + walkAmp * (-10 + Math.sin(walkPhase * 0.7) * 7), 0, Math.sin(walkPhase * 0.6) * 8 * walkAmp);
 
     // Legs: walk cycle while stalking, coiled spring into the pounce, planted legs at impact.
     const cycle = (offset) => Math.sin(walkPhase + offset);
     const bend = (offset) => Math.max(0, Math.sin(walkPhase + offset - 0.85)) * 35;
 
     // Front legs (opposite phases)
-    const flU = crouch * 20 + walkAmp * cycle(0) * 26 - pounce * 55 + strike * 50;
-    const frU = crouch * 20 + walkAmp * cycle(Math.PI) * 26 - pounce * 55 + strike * 50;
-    const flL = crouch * 40 + walkAmp * bend(0) - pounce * 25 + strike * 20;
-    const frL = crouch * 40 + walkAmp * bend(Math.PI) - pounce * 25 + strike * 20;
+    const flU = crouch * 20 + walkAmp * cycle(0) * 26 - pounceAmount * 55 + strike * 50 - swipe * 45;
+    const frU = crouch * 20 + walkAmp * cycle(Math.PI) * 26 - pounceAmount * 55 + strike * 50 - swipe * 80;
+    const flL = crouch * 40 + walkAmp * bend(0) - pounceAmount * 25 + strike * 20 + swipe * 30;
+    const frL = crouch * 40 + walkAmp * bend(Math.PI) - pounceAmount * 25 + strike * 20 + swipe * 45;
     setRot('FLu', flU, 0, 0);
     setRot('FRu', frU, 0, 0);
     setRot('FLl', flL, 0, 0);
     setRot('FRl', frL, 0, 0);
 
     // Hind legs (push-off legs, opposite phase to the front)
-    const blU = crouch * 15 + walkAmp * cycle(Math.PI * 0.85) * 30 + pounce * 40 - strike * 15;
-    const brU = crouch * 15 + walkAmp * cycle(Math.PI * 0.85 + Math.PI) * 30 + pounce * 40 - strike * 15;
-    const blL = crouch * 50 + walkAmp * bend(Math.PI * 0.85) - pounce * 50 + strike * 5;
-    const brL = crouch * 50 + walkAmp * bend(Math.PI * 0.85 + Math.PI) - pounce * 50 + strike * 5;
+    const blU = crouch * 15 + walkAmp * cycle(Math.PI * 0.85) * 30 + pounceAmount * 40 - strike * 15;
+    const brU = crouch * 15 + walkAmp * cycle(Math.PI * 0.85 + Math.PI) * 30 + pounceAmount * 40 - strike * 15;
+    const blL = crouch * 50 + walkAmp * bend(Math.PI * 0.85) - pounceAmount * 50 + strike * 5;
+    const brL = crouch * 50 + walkAmp * bend(Math.PI * 0.85 + Math.PI) - pounceAmount * 50 + strike * 5;
     setRot('BLu', blU, 0, 0);
     setRot('BRu', brU, 0, 0);
     setRot('BLl', blL, 0, 0);

@@ -850,7 +850,7 @@ export class AudioManager {
         growlOsc.stop(now + 1.0);
         lfo.stop(now + 1.0);
 
-        setTimeout(() => this.playAttackImpact(), 650);
+        setTimeout(() => this.playAttackImpact(), 1850);
     }
     
     playAttackImpact() {

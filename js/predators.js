@@ -9,16 +9,16 @@ const MODEL_SOURCES = {
     'mountain lion': {
         url: 'assets/models/mountain-lion.glb',
         height: 1.15,
-        lightColor: 0xffaa33,
-        lightIntensity: 0.7,
-        lightDistance: 4
+        lightColor: 0xffc27a,
+        lightIntensity: 1.1,
+        lightDistance: 6
     },
     bear: {
         url: 'assets/models/black-bear.glb',
         height: 1.8,
-        lightColor: 0xff5533,
-        lightIntensity: 1.0,
-        lightDistance: 5
+        lightColor: 0xff9b66,
+        lightIntensity: 1.4,
+        lightDistance: 7
     }
 };
 
@@ -78,13 +78,18 @@ export class PredatorManager {
     createFromTemplate(type) {
         const wrapper = new THREE.Group();
         const inner = new THREE.Group();
-        const rig = rigStaticModel(this.modelTemplates[type], MODEL_SOURCES[type].height);
+        const rig = rigStaticModel(this.modelTemplates[type], MODEL_SOURCES[type].height, type);
         inner.add(rig.inner);
 
         const config = MODEL_SOURCES[type];
         const light = new THREE.PointLight(config.lightColor, config.lightIntensity, config.lightDistance);
         light.position.set(0, config.height * 0.62, rig.box.max.z * 0.85 + 0.55);
         inner.add(light);
+
+        // Cool fill light keeps dark fur readable without flattening the night scene.
+        const fill = new THREE.PointLight(0x9db9d6, type === 'bear' ? 8 : 5, 9);
+        fill.position.set(-config.height * 0.9, config.height * 1.25, rig.box.max.z + 1);
+        inner.add(fill);
 
         wrapper.add(inner);
         wrapper.userData.type = type;
@@ -118,6 +123,12 @@ export class PredatorManager {
         const inner = new THREE.Group();
         primitive.rotation.y = -Math.PI / 2;
         inner.add(primitive);
+
+        const config = MODEL_SOURCES[type];
+        const fill = new THREE.PointLight(0x9db9d6, type === 'mountain lion' ? 5 : 8, 9);
+        fill.position.set(-config.height * 0.9, config.height * 1.25, 2);
+        inner.add(fill);
+
         wrapper.add(inner);
         wrapper.userData.type = type === 'mountain lion' ? 'mountain lion' : 'bear';
         wrapper.userData.inner = inner;
@@ -375,102 +386,135 @@ export class PredatorManager {
         this.removePredator();
 
         this.activePredator = this.acquirePredator(type);
+        const predator = this.activePredator;
+        const isBear = predator.userData.type === 'bear';
 
-        // Position predator in the forest, facing player
-        const spawnDistance = 8;
-        const angle = Math.random() * Math.PI * 0.5 - Math.PI * 0.25; // Spread in front
+        // Ambush from the player's view, not from a fixed world-space side. A
+        // small offset keeps the animal three-quarter visible as it approaches.
+        const forward = this.camera.getWorldDirection(new THREE.Vector3());
+        forward.y = 0;
+        if (forward.lengthSq() < 0.001) forward.set(0, 0, -1);
+        forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
+        const spawnDistance = isBear ? 6 : 6.8;
 
-        this.activePredator.position.set(
-            playerPosition.x - spawnDistance,
-            0,
-            playerPosition.z + Math.sin(angle) * 3
-        );
+        predator.position.copy(playerPosition).setY(0);
+        predator.position.addScaledVector(forward, spawnDistance);
+        predator.position.addScaledVector(right, isBear ? -0.65 : 0.65);
 
         // Both the GLB templates and the rotated primitives face +Z, so a plain
         // lookAt makes the predator face the player.
-        this.activePredator.lookAt(playerPosition.x, 0, playerPosition.z);
+        predator.lookAt(playerPosition.x, 0, playerPosition.z);
 
-        if (!this.activePredator.parent) {
-            this.scene.add(this.activePredator);
+        if (!predator.parent) {
+            this.scene.add(predator);
         }
 
-        return this.activePredator;
+        return predator;
     }
 
     animateAttack(targetPosition, duration, onComplete) {
         if (!this.activePredator) return;
 
         const startPosition = this.activePredator.position.clone();
+        const targetGround = targetPosition.clone().setY(0);
+        const approachDirection = targetGround.clone().sub(startPosition).setY(0).normalize();
+        const isBear = this.activePredator.userData.type === 'bear';
+        const rig = this.activePredator.userData.rig;
+        const frontOffset = rig
+            ? rig.box.max.z
+            : (isBear ? 1.15 : 0.95);
+        const stopDistance = Math.max(isBear ? 1.6 : 1.25, frontOffset + 0.6);
+        const impactPosition = targetGround.clone().addScaledVector(approachDirection, -stopDistance);
+        const approachPosition = startPosition.clone().lerp(impactPosition, 0.56);
+        const impactHeight = isBear ? 0.12 : 0.32;
+        const jumpHeight = isBear ? 0.42 : 0.95;
+        const animalHeight = MODEL_SOURCES[this.activePredator.userData.type].height;
+
         const startTime = performance.now();
         const predator = this.activePredator;
         const inner = predator.userData.inner;
         const legs = predator.userData.legs || [];
-        const rig = predator.userData.rig || null;
+        const cameraStartPosition = this.camera.position.clone();
+        const cameraStartQuaternion = this.camera.quaternion.clone();
+        const cameraTargetQuaternion = new THREE.Quaternion();
+        const cameraFocus = new THREE.Vector3();
+        let pounceProgress = 0;
+
+        predator.scale.setScalar(1);
 
         const animate = () => {
             const elapsed = performance.now() - startTime;
             const progress = Math.min(elapsed / duration, 1);
 
-            if (progress < 0.6) {
-                // Stalking phase - slow approach
-                const stalkProgress = progress / 0.6;
-                const easeProgress = stalkProgress * stalkProgress; // Ease in
-
-                predator.position.lerpVectors(startPosition, targetPosition, easeProgress * 0.5);
+            if (progress < 0.62) {
+                // Visible, measured approach with a smooth acceleration into the lunge.
+                const stalkProgress = progress / 0.62;
+                const easeProgress = stalkProgress * stalkProgress * (3 - 2 * stalkProgress);
+                predator.position.lerpVectors(startPosition, approachPosition, easeProgress);
+                predator.position.y = 0;
 
                 if (rig) {
                     applyAttackPose(rig, progress, elapsed);
                 } else if (legs.length) {
-                    // Leg animation - walking
-                    const walkCycle = elapsed * 0.01;
+                    const walkCycle = elapsed * (isBear ? 0.008 : 0.011);
                     legs.forEach((leg, i) => {
-                        const offset = i * Math.PI / 2;
-                        leg.rotation.x = Math.sin(walkCycle + offset) * 0.3;
+                        leg.rotation.x = Math.sin(walkCycle + i * Math.PI / 2) * (isBear ? 0.22 : 0.3);
                     });
                 } else if (inner) {
-                    // Low swagger for static GLB models
-                    inner.rotation.z = Math.sin(elapsed * 0.012) * 0.06;
+                    inner.rotation.z = Math.sin(elapsed * 0.012) * 0.04;
                 }
-
-                // Low crouch (the rig bends its own legs, so only dip shallowly)
-                predator.position.y = rig ? -0.04 : -0.12;
             } else {
-                // Pounce phase - fast lunge
-                const pounceProgress = (progress - 0.6) / 0.4;
-                const easeProgress = 1 - Math.pow(1 - pounceProgress, 3); // Ease out
-
-                const midPoint = startPosition.clone().lerp(targetPosition, 0.5);
-
-                predator.position.lerpVectors(midPoint, targetPosition, easeProgress);
-                predator.position.y = Math.sin(pounceProgress * Math.PI) * 1.5;
+                // Fast lunge that stops outside the near clip instead of entering the camera.
+                pounceProgress = (progress - 0.62) / 0.38;
+                const easeProgress = 1 - Math.pow(1 - pounceProgress, 3);
+                predator.position.lerpVectors(approachPosition, impactPosition, easeProgress);
+                predator.position.y = impactHeight * easeProgress + Math.sin(pounceProgress * Math.PI) * jumpHeight;
 
                 if (rig) {
                     applyAttackPose(rig, progress, elapsed);
-                    // Strike punch: slight scale bump as the jaws land
-                    const strike01 = THREE.MathUtils.clamp((progress - 0.76) / 0.2, 0, 1);
-                    predator.scale.setScalar(1 + 0.14 * Math.sin(strike01 * Math.PI));
                 } else if (legs.length) {
-                    // Legs extended during pounce
                     legs.forEach((leg, i) => {
-                        if (i < 2) {
-                            leg.rotation.x = -0.8; // Front legs forward
-                        } else {
-                            leg.rotation.x = 0.5; // Back legs back
-                        }
+                        leg.rotation.x = i < 2 ? -0.8 : 0.5;
                     });
                 } else if (inner) {
-                    // Rear back before the hit
                     inner.rotation.z = 0;
-                    inner.rotation.x = -Math.sin(pounceProgress * Math.PI) * 0.4;
+                    inner.rotation.x = -Math.sin(pounceProgress * Math.PI) * (isBear ? 0.12 : 0.3);
                 }
             }
 
-            // Face target
-            predator.lookAt(targetPosition.x, predator.position.y, targetPosition.z);
+            // Face target without pitching the animal's feet into the air.
+            predator.lookAt(targetGround.x, predator.position.y, targetGround.z);
+
+            // Cinematic reveal: turn toward the animal even if the player looked away.
+            this.camera.position.copy(cameraStartPosition);
+            cameraFocus.set(
+                predator.position.x,
+                animalHeight * 0.55 + predator.position.y * 0.2,
+                predator.position.z
+            );
+            this.camera.lookAt(cameraFocus);
+            cameraTargetQuaternion.copy(this.camera.quaternion);
+            const revealProgress = THREE.MathUtils.smoothstep(progress, 0, 0.16);
+            this.camera.quaternion.slerpQuaternions(
+                cameraStartQuaternion,
+                cameraTargetQuaternion,
+                revealProgress
+            );
+
+            // Increasing shake through the lunge, settling as the animal makes contact.
+            const lungeShake = pounceProgress > 0 ? Math.sin(pounceProgress * Math.PI) : 0;
+            const strikeProgress = THREE.MathUtils.clamp((progress - 0.84) / 0.16, 0, 1);
+            const strikeShake = progress > 0.84 ? Math.sin(strikeProgress * Math.PI) : 0;
+            const shake = lungeShake * 0.012 + strikeShake * 0.035;
+            this.camera.position.x += Math.sin(elapsed * 0.075) * shake;
+            this.camera.position.y += Math.sin(elapsed * 0.093 + 1.4) * shake * 0.65;
+            this.camera.rotateZ(Math.sin(elapsed * 0.061) * shake * 0.25);
 
             if (progress < 1) {
                 this.attackAnimationId = requestAnimationFrame(animate);
             } else {
+                this.attackAnimationId = null;
                 if (onComplete) onComplete();
             }
         };

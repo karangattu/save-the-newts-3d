@@ -709,7 +709,7 @@ class Game {
         return { inDanger: false };
     }
 
-    handleDangerZone(dangerInfo) {
+    async handleDangerZone(dangerInfo) {
         if (dangerInfo.type === 'cliff') {
             this.state = 'falling';
             this.animateCliffApproach(() => {
@@ -720,14 +720,24 @@ class Game {
             });
         } else if (dangerInfo.type === 'predator') {
             this.state = 'attacked';
+            this.player.unlock();
             const predator = dangerInfo.predator || 'mountain lion';
+            const playerPos = this.player.getPosition().clone();
 
-            const playerPos = this.player.getPosition();
+            // Use the real animal model for the encounter, with primitives only
+            // as a fallback if the asset cannot load.
+            await this.predatorManager.modelsReady;
+            if (this.state !== 'attacked') return;
+
             this.predatorManager.spawnPredator(predator, playerPos);
+            // Compile the visible animal before starting the clock so a first-time
+            // shader stall cannot skip the approach and pounce.
+            await this.compileSceneShaders();
+            if (this.state !== 'attacked') return;
 
             this.audioManager.playPredatorAttackSound(predator);
 
-            this.predatorManager.animateAttack(playerPos, 1200, () => {
+            this.predatorManager.animateAttack(playerPos, 2200, () => {
                 this.ui.triggerPredatorAttack(predator);
                 setTimeout(() => {
                     this.predatorManager.removePredator();

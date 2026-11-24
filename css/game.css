@@ -845,29 +845,31 @@ body[data-level="3"] #color-grade {
     background: rgba(80, 0, 0, 0);
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-end;
     align-items: center;
+    padding-bottom: 16vh;
     z-index: 95;
     pointer-events: none;
-    transition: background 0.3s;
+    transition: background 0.3s, box-shadow 0.3s;
 }
 
 #predator-attack.active {
-    background: rgba(80, 0, 0, 0.9);
+    background: rgba(80, 0, 0, 0.22);
+    box-shadow: inset 0 0 160px 40px rgba(120, 0, 0, 0.85);
 }
 
 #predator-attack .predator-icon {
-    font-size: 8rem;
+    font-size: 3rem;
     color: #ff3333;
     animation: predator-shake 0.1s infinite;
-    text-shadow: 0 0 30px #ff0000;
+    text-shadow: 0 0 20px #ff0000;
 }
 
 #predator-attack .predator-name {
-    font-size: 3rem;
+    font-size: 1.6rem;
     font-weight: bold;
     color: #fff;
-    margin-top: 20px;
+    margin-top: 8px;
     text-shadow: 0 0 20px #ff0000;
     animation: predator-pulse 0.2s infinite;
 }
@@ -1490,11 +1492,11 @@ body[data-level="3"] #color-grade {
     }
 
     #predator-attack .predator-icon {
-        font-size: 5rem;
+        font-size: 3.5rem;
     }
 
     #predator-attack .predator-name {
-        font-size: 2rem;
+        font-size: 1.5rem;
     }
 }
 
