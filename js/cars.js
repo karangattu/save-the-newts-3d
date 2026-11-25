@@ -156,7 +156,7 @@ export class CarManager {
         if (vehicleType === VEHICLE_TYPES.TRUCK) return 2.48;
         if (vehicleType === VEHICLE_TYPES.SUV) return 2.18;
         if (vehicleType === VEHICLE_TYPES.SEDAN) return 2.38;
-        return 2.12;
+        return 2.36;
     }
 
     updateHeadlightCones() {
@@ -224,8 +224,8 @@ export class CarManager {
     createSharedMaterials() {
         return {
             glass: new THREE.MeshStandardMaterial({
-                color: 0x88ccee, transparent: true, opacity: 0.3,
-                roughness: 0.05, metalness: 0.9
+                color: 0x182b3a, transparent: true, opacity: 0.68,
+                roughness: 0.08, metalness: 0.35
             }),
             glassStealth: new THREE.MeshStandardMaterial({
                 color: 0x111118, transparent: true, opacity: 0.55,
@@ -526,6 +526,95 @@ export class CarManager {
         return geo;
     }
 
+    // Loft rounded-rectangle cross-sections along the car's length. Unlike a
+    // side-profile extrusion, this gives the nose, haunches and canopy their
+    // own widths and slopes instead of reading as one tall rectangular slab.
+    createLoftGeometry(stations) {
+        const ring = [
+            [0, 1], [0.62, 1], [1, 0.90], [1, 0.18], [0.72, 0],
+            [0, 0], [-0.72, 0], [-1, 0.18], [-1, 0.90], [-0.62, 1]
+        ];
+        const ringSize = ring.length;
+        const positions = [];
+        const uvs = [];
+        const indices = [];
+
+        for (let i = 0; i < stations.length; i++) {
+            const station = stations[i];
+            for (let j = 0; j < ringSize; j++) {
+                const [x, y] = ring[j];
+                positions.push(x * station.w, station.b + (station.t - station.b) * y, station.z);
+                uvs.push(j / ringSize, i / (stations.length - 1));
+            }
+        }
+
+        for (let i = 0; i < stations.length - 1; i++) {
+            for (let j = 0; j < ringSize; j++) {
+                const next = (j + 1) % ringSize;
+                const a = i * ringSize + j;
+                const b = i * ringSize + next;
+                const c = (i + 1) * ringSize + j;
+                const d = (i + 1) * ringSize + next;
+                indices.push(a, c, b, b, c, d);
+            }
+        }
+
+        const rearCenter = positions.length / 3;
+        positions.push(0, (stations[0].b + stations[0].t) * 0.5, stations[0].z);
+        uvs.push(0.5, 0);
+        const frontCenter = positions.length / 3;
+        const front = stations[stations.length - 1];
+        positions.push(0, (front.b + front.t) * 0.5, front.z);
+        uvs.push(0.5, 1);
+        const frontStart = (stations.length - 1) * ringSize;
+
+        for (let j = 0; j < ringSize; j++) {
+            const next = (j + 1) % ringSize;
+            indices.push(rearCenter, j, next);
+            indices.push(frontCenter, frontStart + next, frontStart + j);
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+        return geometry;
+    }
+
+    createModel3BodyGeometry() {
+        // Model 3 proportions: 4.72 m long, 1.85 m wide, 2.88 m wheelbase.
+        return this.createLoftGeometry([
+            { z: -2.36, w: 0.70, b: 0.30, t: 0.60 },
+            { z: -2.28, w: 0.82, b: 0.25, t: 0.68 },
+            { z: -2.05, w: 0.89, b: 0.22, t: 0.76 },
+            { z: -1.65, w: 0.93, b: 0.20, t: 0.81 },
+            { z: -1.10, w: 0.94, b: 0.19, t: 0.83 },
+            { z: -0.45, w: 0.94, b: 0.19, t: 0.85 },
+            { z: 0.35, w: 0.94, b: 0.20, t: 0.86 },
+            { z: 0.90, w: 0.92, b: 0.21, t: 0.84 },
+            { z: 1.35, w: 0.90, b: 0.22, t: 0.78 },
+            { z: 1.80, w: 0.86, b: 0.24, t: 0.69 },
+            { z: 2.12, w: 0.80, b: 0.27, t: 0.59 },
+            { z: 2.30, w: 0.73, b: 0.31, t: 0.51 },
+            { z: 2.36, w: 0.67, b: 0.35, t: 0.47 }
+        ]);
+    }
+
+    createModel3CanopyGeometry() {
+        return this.createLoftGeometry([
+            { z: 0.92, w: 0.80, b: 0.82, t: 0.86 },
+            { z: 0.62, w: 0.77, b: 0.83, t: 1.12 },
+            { z: 0.20, w: 0.72, b: 0.84, t: 1.36 },
+            { z: -0.35, w: 0.70, b: 0.84, t: 1.44 },
+            { z: -0.90, w: 0.72, b: 0.84, t: 1.40 },
+            { z: -1.40, w: 0.77, b: 0.83, t: 1.20 },
+            { z: -1.78, w: 0.82, b: 0.81, t: 0.94 },
+            { z: -1.92, w: 0.84, b: 0.80, t: 0.86 }
+        ]);
+    }
+
     addGlassCabin(group, glassMat, opts) {
         const {
             width = 1.7,
@@ -618,10 +707,12 @@ export class CarManager {
     }
 
     addAeroWheels(group, xOffset, zOffset, radius = 0.34, zPos = 0) {
-        const wheelGeo = new THREE.CylinderGeometry(radius, radius, 0.26, 12);
-        // Large disc hubcap for aero look
-        const hubGeo = new THREE.CylinderGeometry(radius * 0.72, radius * 0.72, 0.28, 12);
-        const ringGeo = new THREE.TorusGeometry(radius * 0.55, 0.025, 6, 16);
+        // Rounded tire sidewalls + dark aero covers with five broad spokes.
+        const tireGeo = new THREE.TorusGeometry(radius * 0.78, radius * 0.22, 8, 20);
+        tireGeo.scale(1, 1, 1.5);
+        const hubGeo = new THREE.CylinderGeometry(radius * 0.66, radius * 0.66, 0.24, 18);
+        const capGeo = new THREE.CylinderGeometry(radius * 0.16, radius * 0.16, 0.03, 12);
+        const spokeGeo = new THREE.BoxGeometry(0.035, radius * 0.56, 0.055);
 
         const positions = [
             { x: xOffset, z: zPos + zOffset },
@@ -631,9 +722,12 @@ export class CarManager {
         ];
 
         positions.forEach(pos => {
-            const wheel = new THREE.Mesh(wheelGeo, this.sharedMaterials.wheel);
-            wheel.rotation.z = Math.PI / 2;
+            const side = Math.sign(pos.x);
+            const outerX = pos.x + side * 0.12;
+            const wheel = new THREE.Mesh(tireGeo, this.sharedMaterials.wheel);
+            wheel.rotation.y = Math.PI / 2;
             wheel.position.set(pos.x, radius, pos.z);
+            wheel.castShadow = true;
             group.add(wheel);
 
             const hub = new THREE.Mesh(hubGeo, this.sharedMaterials.hubcap);
@@ -641,87 +735,165 @@ export class CarManager {
             hub.position.set(pos.x, radius, pos.z);
             group.add(hub);
 
-            const ring = new THREE.Mesh(ringGeo, this.sharedMaterials.chrome);
-            ring.rotation.y = Math.PI / 2;
-            ring.position.set(pos.x + (pos.x > 0 ? 0.02 : -0.02), radius, pos.z);
-            group.add(ring);
+            for (let i = 0; i < 5; i++) {
+                const angle = i * Math.PI * 2 / 5;
+                const spoke = new THREE.Mesh(spokeGeo, this.sharedMaterials.hubcap);
+                spoke.position.set(
+                    outerX,
+                    radius + Math.cos(angle) * radius * 0.27,
+                    pos.z + Math.sin(angle) * radius * 0.27
+                );
+                spoke.rotation.x = angle;
+                group.add(spoke);
+            }
+
+            const cap = new THREE.Mesh(capGeo, this.sharedMaterials.chrome);
+            cap.rotation.z = Math.PI / 2;
+            cap.position.set(outerX + side * 0.02, radius, pos.z);
+            group.add(cap);
         });
+    }
+
+    addBarBetween(group, from, to, width, material) {
+        const start = new THREE.Vector3(...from);
+        const end = new THREE.Vector3(...to);
+        const direction = end.clone().sub(start);
+        const length = direction.length();
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(width, length, width), material);
+        bar.position.copy(start).add(end).multiplyScalar(0.5);
+        bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+        group.add(bar);
+        return bar;
+    }
+
+    createLampGeometry(points) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+        geometry.setIndex([0, 1, 2, 0, 2, 3]);
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+
+    addWheelArchTrims(group, xOffset, zOffset, radius) {
+        const archGeo = new THREE.TorusGeometry(radius + 0.055, 0.028, 6, 18, Math.PI);
+        for (const side of [-1, 1]) {
+            for (const z of [zOffset, -zOffset]) {
+                const arch = new THREE.Mesh(archGeo, this.sharedMaterials.rubber);
+                arch.rotation.y = Math.PI / 2;
+                arch.position.set(side * (xOffset + 0.015), radius, z);
+                group.add(arch);
+            }
+        }
     }
 
     // ─── TESLA-STYLE VEHICLE MESHES ─────────────────────────────────
 
     createCarMesh(isStealth) {
-        // Tesla Model 3 — sleek fastback sedan, closed nose, glass roof, aero wheels.
+        // Tesla Model 3 — low nose, fastback canopy, flush details and aero wheels.
         const group = new THREE.Group();
         const bodyMat = this.createBodyMaterial(isStealth, this.getRandomCarColor());
         const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
 
-        const profile = [
-            [-2.10, 0.18], // rear bottom
-            [2.10, 0.18],  // front bottom
-            [2.18, 0.32],  // front lip (low Model 3 nose)
-            [2.10, 0.55],  // closed nose — no grille
-            [1.60, 0.72],  // frunk / hood leading edge
-            [0.75, 0.80],  // hood / cowl
-            [0.20, 1.26],  // windshield base → A-pillar
-            [-0.60, 1.36], // glass roof peak
-            [-1.30, 1.12], // fastback rear glass
-            [-1.80, 0.78], // short decklid + ducktail
-            [-2.18, 0.48], // rear bumper
-            [-2.10, 0.18]
-        ];
-
-        const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 1.95, 0.26), bodyMat);
+        const body = new THREE.Mesh(this.createModel3BodyGeometry(), bodyMat);
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
 
-        // Panoramic glass: windshield + roof in one continuous canopy
-        this.addGlassCabin(group, glassMat, {
-            width: 1.78, height: 0.4, length: 1.65, y: 1.12, z: -0.12, roofY: 1.38
-        });
-        // Extra-long roof glass strip — signature Model 3 canopy
-        const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.035, 1.55), glassMat);
-        canopy.position.set(0, 1.40, -0.25);
-        canopy.rotation.x = -0.06;
+        const canopy = new THREE.Mesh(this.createModel3CanopyGeometry(), glassMat);
+        canopy.receiveShadow = true;
         group.add(canopy);
 
-        this.addTeslaFront(group, bodyMat, 2.13, 0.50);
+        // Dark panoramic roof insert sits just above the glass loft.
+        const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.025, 1.12), glassMat);
+        roofGlass.position.set(0, 1.445, -0.34);
+        roofGlass.rotation.x = -0.025;
+        group.add(roofGlass);
+
+        for (const side of [-1, 1]) {
+            // A/C pillars and the black B-pillar frame the continuous glass canopy.
+            this.addBarBetween(group, [side * 0.80, 0.84, 0.90], [side * 0.70, 1.41, 0.15], 0.045, bodyMat);
+            this.addBarBetween(group, [side * 0.70, 0.84, -0.40], [side * 0.70, 1.44, -0.40], 0.05, this.sharedMaterials.rubber);
+            this.addBarBetween(group, [side * 0.72, 1.39, -0.90], [side * 0.82, 0.83, -1.75], 0.06, bodyMat);
+            this.addBarBetween(group, [side * 0.94, 0.84, 0.85], [side * 0.94, 0.84, -1.75], 0.025, this.sharedMaterials.rubber);
+            // Shallow frunk shut lines follow the hood slope.
+            this.addBarBetween(group, [side * 0.50, 0.845, 0.80], [side * 0.57, 0.64, 2.02], 0.008, this.sharedMaterials.rubber);
+        }
+
+        this.addModel3Nose(group);
         this.addModel3Headlights(group, isStealth);
-        this.addModel3Details(group, bodyMat, glassMat);
-        this.addSideMirrors(group, 1.0, 1.16, 0.55);
-        this.addAeroWheels(group, 0.98, 1.35, 0.34);
-        this.addTeslaLights(group, isStealth, 2.12, -2.14, 0.58);
+        this.addModel3RearLights(group, isStealth);
+        this.addModel3Details(group, bodyMat);
+        this.addSideMirrors(group, 0.96, 1.10, 0.58);
+        this.addAeroWheels(group, 0.94, 1.44, 0.34);
+        this.addWheelArchTrims(group, 0.94, 1.44, 0.34);
 
         group.userData.isModel3 = true;
         group.userData.bodyMat = bodyMat;
         return group;
     }
 
-    // Model 3 swept-eye LED headlights + flush handles + repeater cameras.
+    // Slim swept lenses replace the old full-width light bars.
     addModel3Headlights(group, isStealth) {
         const headMat = isStealth ? this.sharedMaterials.headlightOff : this.sharedMaterials.headlightGlow;
-        // Angled teardrop lenses sweeping back from the nose
-        const lensGeo = new THREE.BoxGeometry(0.28, 0.07, 0.55);
-        const leftLens = new THREE.Mesh(lensGeo, headMat);
-        leftLens.position.set(0.72, 0.68, 1.88);
-        leftLens.rotation.y = -0.38;
-        leftLens.rotation.z = 0.08;
-        group.add(leftLens);
-        const rightLens = new THREE.Mesh(lensGeo, headMat);
-        rightLens.position.set(-0.72, 0.68, 1.88);
-        rightLens.rotation.y = 0.38;
-        rightLens.rotation.z = -0.08;
-        group.add(rightLens);
+        const leftPoints = [
+            [0.22, 0.56, 2.365],
+            [0.76, 0.61, 2.260],
+            [0.74, 0.69, 2.240],
+            [0.26, 0.64, 2.375]
+        ];
+        const rightPoints = leftPoints.map(([x, y, z]) => [-x, y, z]).reverse();
+        group.add(new THREE.Mesh(this.createLampGeometry(leftPoints), headMat));
+        group.add(new THREE.Mesh(this.createLampGeometry(rightPoints), headMat));
+
+        if (!isStealth && this.enableDynamicLights && this.qualityLevel >= 2) {
+            const light = new THREE.SpotLight(0xf5f8ff, 2.5, 25, 0.5, 0.6);
+            light.position.set(0, 0.64, 2.30);
+            light.target.position.set(0, 0, 22.30);
+            light.castShadow = false;
+            light.userData.carHeadlight = true;
+            group.add(light, light.target);
+        }
     }
 
-    addModel3Details(group, bodyMat, glassMat) {
+    addModel3RearLights(group, isStealth) {
+        const tailMat = isStealth ? this.sharedMaterials.taillightOff : this.sharedMaterials.taillightOn;
+        const leftPoints = [
+            [0.18, 0.60, -2.360],
+            [0.18, 0.69, -2.360],
+            [0.78, 0.73, -2.240],
+            [0.82, 0.64, -2.250]
+        ];
+        const rightPoints = leftPoints.map(([x, y, z]) => [-x, y, z]).reverse();
+        group.add(new THREE.Mesh(this.createLampGeometry(leftPoints), tailMat));
+        group.add(new THREE.Mesh(this.createLampGeometry(rightPoints), tailMat));
+
+        const centerBar = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.035, 0.03), tailMat);
+        centerBar.position.set(0, 0.72, -2.35);
+        group.add(centerBar);
+    }
+
+    addModel3Nose(group) {
+        const intake = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.085, 0.035), this.sharedMaterials.rubber);
+        intake.position.set(0, 0.345, 2.355);
+        group.add(intake);
+
+        // Small Tesla T badge on the closed, grille-less nose.
+        const badgeV = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.085, 0.012), this.sharedMaterials.chrome);
+        badgeV.position.set(0, 0.545, 2.365);
+        group.add(badgeV);
+        const badgeH = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.018, 0.012), this.sharedMaterials.chrome);
+        badgeH.position.set(0, 0.555, 2.366);
+        group.add(badgeH);
+    }
+
+    addModel3Details(group, bodyMat) {
         // Flush door handles — thin dark blades sitting proud of the body
         const handleGeo = new THREE.BoxGeometry(0.03, 0.035, 0.22);
         const handleMat = this.sharedMaterials.rubber;
         const handlePositions = [
-            [0.985, 0.82, 0.45], [-0.985, 0.82, 0.45],
-            [0.985, 0.82, -0.45], [-0.985, 0.82, -0.45]
+            [0.945, 0.80, 0.30], [-0.945, 0.80, 0.30],
+            [0.945, 0.80, -0.70], [-0.945, 0.80, -0.70]
         ];
         for (const [x, y, z] of handlePositions) {
             const handle = new THREE.Mesh(handleGeo, handleMat);
@@ -732,68 +904,38 @@ export class CarManager {
         // Side repeater cameras on front fenders
         const camGeo = new THREE.BoxGeometry(0.05, 0.06, 0.16);
         const camL = new THREE.Mesh(camGeo, this.sharedMaterials.rubber);
-        camL.position.set(1.0, 0.88, 0.78);
+        camL.position.set(0.95, 0.87, 0.75);
         group.add(camL);
         const camR = new THREE.Mesh(camGeo, this.sharedMaterials.rubber);
-        camR.position.set(-1.0, 0.88, 0.78);
+        camR.position.set(-0.95, 0.87, 0.75);
         group.add(camR);
 
         // Door shut lines (subtle dark seams)
-        const seamGeo = new THREE.BoxGeometry(0.012, 0.5, 0.02);
-        for (const side of [0.978, -0.978]) {
-            for (const z of [0.05, -0.75]) {
+        const seamGeo = new THREE.BoxGeometry(0.012, 0.42, 0.02);
+        for (const side of [0.94, -0.94]) {
+            for (const z of [0.10, -0.85]) {
                 const seam = new THREE.Mesh(seamGeo, this.sharedMaterials.rubber);
-                seam.position.set(side, 0.68, z);
+                seam.position.set(side, 0.64, z);
                 group.add(seam);
             }
         }
 
         // Rear diffuser + license recess
-        const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.14, 0.1), this.sharedMaterials.rubber);
-        diffuser.position.set(0, 0.30, -2.14);
+        const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.13, 0.08), this.sharedMaterials.rubber);
+        diffuser.position.set(0, 0.30, -2.30);
         group.add(diffuser);
         const plate = new THREE.Mesh(
             new THREE.BoxGeometry(0.44, 0.12, 0.03),
             new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 })
         );
-        plate.position.set(0, 0.52, -2.16);
+        plate.position.set(0, 0.52, -2.35);
         group.add(plate);
     }
 
     createSedanMesh(isStealth) {
-        // Model 3 long-range variant — stretched Tesla sedan proportions
-        const group = new THREE.Group();
-        const bodyMat = this.createBodyMaterial(isStealth, this.getRandomCarColor());
-        const glassMat = isStealth ? this.sharedMaterials.glassStealth : this.sharedMaterials.glass;
-
-        const profile = [
-            [-2.35, 0.16],
-            [2.35, 0.16],
-            [2.42, 0.32],
-            [2.32, 0.54],
-            [1.75, 0.70],
-            [0.85, 0.76],
-            [0.28, 1.22],
-            [-0.7, 1.30],
-            [-1.55, 1.05],
-            [-2.05, 0.72],
-            [-2.42, 0.46],
-            [-2.35, 0.16]
-        ];
-
-        const body = new THREE.Mesh(this.createSleekBodyGeometry(profile, 1.9, 0.24), bodyMat);
-        body.castShadow = true;
-        body.receiveShadow = true;
-        group.add(body);
-
-        this.addGlassCabin(group, glassMat, {
-            width: 1.72, height: 0.38, length: 1.85, y: 1.08, z: -0.15, roofY: 1.34
-        });
-        this.addTeslaFront(group, bodyMat, 2.35, 0.48);
-        this.addSideMirrors(group, 0.98, 1.12, 0.6);
-        this.addAeroWheels(group, 0.95, 1.55, 0.33);
-        this.addTeslaLights(group, isStealth, 2.38, -2.38, 0.54);
-
+        // Long Range shares the same Model 3 body; only the pool label differs.
+        const group = this.createCarMesh(isStealth);
+        group.userData.isLongRange = true;
         return group;
     }
 
@@ -1662,8 +1804,8 @@ export class CarManager {
             const isTruck = car.vehicleType === VEHICLE_TYPES.TRUCK;
             const isSUV = car.vehicleType === VEHICLE_TYPES.SUV;
             const isSedan = car.vehicleType === VEHICLE_TYPES.SEDAN;
-            const frontZ = isSemi ? 4.32 : (isMoto ? 1.2 : (isTruck ? 2.48 : (isSUV ? 2.18 : (isSedan ? 2.38 : 2.12))));
-            const backZ = isSemi ? -6.52 : (isMoto ? -0.95 : (isTruck ? -2.55 : (isSUV ? -2.18 : (isSedan ? -2.38 : -2.14))));
+            const frontZ = isSemi ? 4.32 : (isMoto ? 1.2 : (isTruck ? 2.48 : (isSUV ? 2.18 : (isSedan ? 2.38 : 2.36))));
+            const backZ = isSemi ? -6.52 : (isMoto ? -0.95 : (isTruck ? -2.55 : (isSUV ? -2.18 : (isSedan ? -2.38 : -2.36))));
             const y = isSemi ? 0.9 : 0.7;
             const headlightOffsets = isMoto ? [0] : [-0.62, 0.62];
             if (idx + headlightOffsets.length + 1 > maxPoints) break;
@@ -1713,8 +1855,8 @@ export class CarManager {
     fillCarBox(car, out) {
         const pos = car.mesh.position;
 
-        let halfWidth = 1;
-        let halfLength = 2;
+        let halfWidth = 0.94;
+        let halfLength = 2.36;
 
         if (car.vehicleType === VEHICLE_TYPES.MOTORCYCLE) {
             halfWidth = 0.3;

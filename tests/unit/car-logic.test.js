@@ -139,6 +139,30 @@ describe('CarManager logic', () => {
         expect(frontY).toBeLessThan(rearY);
     });
 
+    test('Model 3 body and canopy use sedan proportions', () => {
+        const manager = Object.create(CarManager.prototype);
+        const body = manager.createModel3BodyGeometry();
+        const canopy = manager.createModel3CanopyGeometry();
+        body.computeBoundingBox();
+        canopy.computeBoundingBox();
+
+        expect(body.boundingBox.max.z - body.boundingBox.min.z).toBeCloseTo(4.72, 2);
+        expect(body.boundingBox.max.x - body.boundingBox.min.x).toBeLessThanOrEqual(1.88);
+        expect(canopy.boundingBox.max.y).toBeCloseTo(1.44, 2);
+    });
+
+    test('sedan traffic shares the Model 3 design', () => {
+        const manager = Object.create(CarManager.prototype);
+        const model = { userData: { isModel3: true } };
+        manager.createCarMesh = () => model;
+
+        const sedan = manager.createSedanMesh(false);
+
+        expect(sedan).toBe(model);
+        expect(sedan.userData.isModel3).toBe(true);
+        expect(sedan.userData.isLongRange).toBe(true);
+    });
+
     test('uses two rotated headlight glow points for Tesla-style cars', () => {
         const manager = Object.create(CarManager.prototype);
         const positions = new Float32Array(9);
@@ -158,10 +182,10 @@ describe('CarManager logic', () => {
         manager.updateLightGlows();
 
         expect(geometry.drawRange.count).toBe(3);
-        expect(positions[0]).toBeCloseTo(12.12);
+        expect(positions[0]).toBeCloseTo(12.36);
         expect(positions[1]).toBeCloseTo(0.7);
         expect(positions[2]).toBeCloseTo(20.62);
-        expect(positions[3]).toBeCloseTo(12.12);
+        expect(positions[3]).toBeCloseTo(12.36);
         expect(positions[4]).toBeCloseTo(0.7);
         expect(positions[5]).toBeCloseTo(19.38);
     });
